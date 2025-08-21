@@ -9,6 +9,7 @@ use App\Core\Autoloader;
 use App\Core\Router;
 use App\Core\I18n;
 use App\Config\Config;
+use App\Controllers\DropdownController;
 
 // Initialize autoloader
 Autoloader::register();
@@ -19,6 +20,23 @@ Config::init();
 // Handle language switching
 $requestedLang = $_GET['lang'] ?? $_SESSION['locale'] ?? 'en';
 I18n::init($requestedLang);
+
+// Handle AJAX route manually before router (to avoid routing conflicts)
+$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+if ($path === '/dropdowns/get-by-parent' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+    // Check authentication
+    use App\Core\Auth;
+    if (!Auth::check()) {
+        http_response_code(401);
+        header('Content-Type: application/json');
+        echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+        exit;
+    }
+    
+    $controller = new DropdownController();
+    $controller->getByParent();
+    exit;
+}
 
 // Initialize router
 $router = new Router();
@@ -46,16 +64,9 @@ $router->group(['auth' => true], function(Router $r) {
     // Products
     $r->resource('/products', 'ProductController');
     
-    // Dropdowns - IMPORTANT: Specific routes MUST come before resource routes
-    $r->get('/dropdowns/get-by-parent', 'DropdownController@getByParent');
+    // Dropdowns (AJAX route handled manually above)
     $r->resource('/dropdowns', 'DropdownController');
 });
 
 // Handle the request
-$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-error_log("Requested path: " . $path);
-if ($path === '/dropdowns/get-by-parent') {
-    error_log("Matched dropdown AJAX route");
-}
 $router->resolve();
-
