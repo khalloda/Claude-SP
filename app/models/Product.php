@@ -16,11 +16,11 @@ class Product extends Model
         'name',
         'cost_price',
         'sale_price',
-        'color',           // Added this
-        'brand',           // Added this
-        'car_make',        // Added this
-        'car_model',       // Added this
-        'total_qty',       // Added this
+        'color',
+        'brand',
+        'car_make',
+        'car_model',
+        'total_qty',
         'reserved_quotes',
         'reserved_orders'
     ];
@@ -113,6 +113,21 @@ class Product extends Model
                          VALUES (?, ?, ?, ?)";
             DB::query($insertSql, [$productId, $warehouseId, $qty, $locationLabel]);
         }
+        
+        // Update total quantity in products table
+        $this->updateTotalQuantity($productId);
+    }
+
+    private function updateTotalQuantity(int $productId): void
+    {
+        $sql = "UPDATE sp_products 
+                SET total_qty = (
+                    SELECT COALESCE(SUM(qty), 0) 
+                    FROM sp_product_locations 
+                    WHERE product_id = ?
+                ) 
+                WHERE id = ?";
+        DB::query($sql, [$productId, $productId]);
     }
 
     public function create(array $data): int
@@ -122,6 +137,25 @@ class Product extends Model
             $data['code'] = $this->generateCode($data['classification']);
         }
         
-        return parent::create($data);
+        $productId = parent::create($data);
+        
+        // Update total quantity if warehouse locations are provided
+        if ($productId) {
+            $this->updateTotalQuantity($productId);
+        }
+        
+        return $productId;
+    }
+
+    public function update(int $id, array $data): bool
+    {
+        $result = parent::update($id, $data);
+        
+        // Update total quantity after update
+        if ($result) {
+            $this->updateTotalQuantity($id);
+        }
+        
+        return $result;
     }
 }
