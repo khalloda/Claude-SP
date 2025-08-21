@@ -13,9 +13,9 @@ class Client extends Model
     protected array $fillable = [
         'type',
         'name',
-        'phone',      // Added this
+        'phone',
         'email',
-        'address'     // Added this
+        'address'
     ];
 
     public function search(string $query, int $page = 1, int $perPage = 15): array
