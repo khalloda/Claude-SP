@@ -49,6 +49,10 @@ class SupplierController extends Controller
             'email' => 'email'
         ]);
 
+        // Add the missing fields explicitly
+        $data['phone'] = Helpers::input('phone', '');
+        $data['address'] = Helpers::input('address', '');
+
         try {
             $this->supplierModel->create($data);
             $this->setFlash('success', I18n::t('messages.created'));
@@ -98,6 +102,10 @@ class SupplierController extends Controller
             'name' => 'required',
             'email' => 'email'
         ]);
+
+        // Add the missing fields explicitly
+        $data['phone'] = Helpers::input('phone', '');
+        $data['address'] = Helpers::input('address', '');
 
         try {
             $this->supplierModel->update($id, $data);
