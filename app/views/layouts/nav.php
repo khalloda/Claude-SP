@@ -22,6 +22,18 @@ $arUrl = $basePath . '?lang=ar';
             <ul class="navbar-nav">
                 <li><a href="/dashboard" class="nav-link"><?= I18n::t('navigation.dashboard') ?></a></li>
                 
+                <!-- Masters Menu -->
+                <li class="dropdown">
+                    <a href="#" class="nav-link dropdown-toggle">Masters</a>
+                    <div class="dropdown-menu">
+                        <a href="/clients" class="dropdown-item"><?= I18n::t('navigation.clients') ?></a>
+                        <a href="/suppliers" class="dropdown-item"><?= I18n::t('navigation.suppliers') ?></a>
+                        <a href="/warehouses" class="dropdown-item"><?= I18n::t('navigation.warehouses') ?></a>
+                        <a href="/products" class="dropdown-item"><?= I18n::t('navigation.products') ?></a>
+                        <a href="/dropdowns" class="dropdown-item">Dropdowns</a>
+                    </div>
+                </li>
+                
                 <!-- Language Switcher -->
                 <li class="lang-switcher">
                     <a href="<?= $enUrl ?>" class="lang-link <?= I18n::getLocale() === 'en' ? 'active' : '' ?>">EN</a>
