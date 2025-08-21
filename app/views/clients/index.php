@@ -25,7 +25,7 @@ ob_start();
                     name="search" 
                     class="form-control" 
                     placeholder="<?= I18n::t('actions.search') ?>..." 
-                    value="<?= Helpers::escape($search) ?>"
+                    value="<?= Helpers::escape($search ?? '') ?>"
                     style="flex: 1;"
                 >
                 <button type="submit" class="btn btn-secondary"><?= I18n::t('actions.search') ?></button>
@@ -54,13 +54,13 @@ ob_start();
                             <tr>
                                 <td>
                                     <a href="/clients/<?= $client['id'] ?>" style="text-decoration: none; color: #667eea;">
-                                        <?= Helpers::escape($client['name']) ?>
+                                        <?= Helpers::escape($client['name'] ?? '') ?>
                                     </a>
                                 </td>
-                                <td><?= Helpers::escape(ucfirst($client['type'])) ?></td>
-                                <td><?= Helpers::escape($client['email']) ?></td>
-                                <td><?= Helpers::escape($client['phone']) ?></td>
-                                <td><?= Helpers::formatDate($client['created_at']) ?></td>
+                                <td><?= Helpers::escape(ucfirst($client['type'] ?? '')) ?></td>
+                                <td><?= Helpers::escape($client['email'] ?? '') ?></td>
+                                <td><?= Helpers::escape($client['phone'] ?? '') ?></td>
+                                <td><?= Helpers::formatDate($client['created_at'] ?? date('Y-m-d H:i:s')) ?></td>
                                 <td>
                                     <div style="display: flex; gap: 0.5rem;">
                                         <a href="/clients/<?= $client['id'] ?>" class="btn btn-sm btn-secondary"><?= I18n::t('actions.view') ?></a>
@@ -86,7 +86,7 @@ ob_start();
         </div>
 
         <!-- Pagination -->
-        <?php if ($clients['last_page'] > 1): ?>
+        <?php if (isset($clients['last_page']) && $clients['last_page'] > 1): ?>
             <div class="pagination-wrapper">
                 <?php
                 $currentPage = $clients['current_page'];
