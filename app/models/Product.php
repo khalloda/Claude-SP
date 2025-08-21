@@ -16,11 +16,11 @@ class Product extends Model
         'name',
         'cost_price',
         'sale_price',
-        'color',
-        'brand',
-        'car_make',
-        'car_model',
-        'total_qty',
+        'color',           // Added this
+        'brand',           // Added this
+        'car_make',        // Added this
+        'car_model',       // Added this
+        'total_qty',       // Added this
         'reserved_quotes',
         'reserved_orders'
     ];
