@@ -14,104 +14,105 @@ class ClientController extends Controller
 
     public function __construct()
     {
-        $this->view('products/index', compact('products', 'search'));
+        $this->clientModel = new Client();
+    }
+
+    public function index(): void
+    {
+        $search = Helpers::input('search', '');
+        $page = (int) Helpers::input('page', 1);
+        
+        if (!empty($search)) {
+            $clients = $this->clientModel->search($search, $page);
+        } else {
+            $clients = $this->clientModel->paginate($page);
+        }
+        
+        $this->view('clients/index', compact('clients', 'search'));
     }
 
     public function create(): void
     {
-        $dropdowns = $this->getDropdownsForForm();
-        $warehouses = $this->warehouseModel->all();
-        
-        $this->view('products/form', compact('dropdowns', 'warehouses'));
+        $this->view('clients/form');
     }
 
     public function store(): void
     {
         if (!Helpers::verifyCsrf()) {
             $this->setFlash('error', I18n::t('messages.error'));
-            $this->redirect('/products');
+            $this->redirect('/clients');
         }
 
         $data = $this->validate([
-            'classification' => 'required',
+            'type' => 'required',
             'name' => 'required',
-            'cost_price' => 'required|numeric',
-            'sale_price' => 'required|numeric'
+            'email' => 'email'
         ]);
 
         try {
-            $productId = $this->productModel->create($data);
-            
-            // Handle warehouse locations
-            $this->updateProductLocations($productId);
-            
+            $this->clientModel->create($data);
             $this->setFlash('success', I18n::t('messages.created'));
-            $this->redirect('/products/' . $productId);
+            $this->redirect('/clients');
         } catch (\Exception $e) {
-            $this->setFlash('error', I18n::t('messages.error') . ': ' . $e->getMessage());
-            $this->redirect('/products/create');
+            $this->setFlash('error', I18n::t('messages.error'));
+            $this->redirect('/clients/create');
         }
     }
 
     public function show(array $params): void
     {
         $id = (int) $params['id'];
-        $product = $this->productModel->find($id);
+        $client = $this->clientModel->find($id);
         
-        if (!$product) {
+        if (!$client) {
             $this->setFlash('error', I18n::t('messages.not_found'));
-            $this->redirect('/products');
+            $this->redirect('/clients');
         }
 
-        $locations = $this->productModel->getLocations($id);
-        $stockMovements = $this->productModel->getStockMovements($id);
+        // Get related data for tabs
+        $quotes = $this->clientModel->getQuotes($id);
+        $salesOrders = $this->clientModel->getSalesOrders($id);
+        $invoices = $this->clientModel->getInvoices($id);
+        $payments = $this->clientModel->getPayments($id);
+        $balance = $this->clientModel->getBalance($id);
         
-        $this->view('products/show', compact('product', 'locations', 'stockMovements'));
+        $this->view('clients/show', compact('client', 'quotes', 'salesOrders', 'invoices', 'payments', 'balance'));
     }
 
     public function edit(array $params): void
     {
         $id = (int) $params['id'];
-        $product = $this->productModel->find($id);
+        $client = $this->clientModel->find($id);
         
-        if (!$product) {
+        if (!$client) {
             $this->setFlash('error', I18n::t('messages.not_found'));
-            $this->redirect('/products');
+            $this->redirect('/clients');
         }
         
-        $dropdowns = $this->getDropdownsForForm();
-        $warehouses = $this->warehouseModel->all();
-        $locations = $this->productModel->getLocations($id);
-        
-        $this->view('products/form', compact('product', 'dropdowns', 'warehouses', 'locations'));
+        $this->view('clients/form', compact('client'));
     }
 
     public function update(array $params): void
     {
         if (!Helpers::verifyCsrf()) {
             $this->setFlash('error', I18n::t('messages.error'));
-            $this->redirect('/products');
+            $this->redirect('/clients');
         }
 
         $id = (int) $params['id'];
         $data = $this->validate([
-            'classification' => 'required',
+            'type' => 'required',
             'name' => 'required',
-            'cost_price' => 'required|numeric',
-            'sale_price' => 'required|numeric'
+            'email' => 'email'
         ]);
 
         try {
-            $this->productModel->update($id, $data);
-            
-            // Handle warehouse locations
-            $this->updateProductLocations($id);
-            
+            $this->clientModel->update($id, $data);
             $this->setFlash('success', I18n::t('messages.updated'));
-            $this->redirect('/products/' . $id);
+            $this->redirect('/clients/' . $id);
         } catch (\Exception $e) {
             $this->setFlash('error', I18n::t('messages.error'));
-            $this->redirect('/products/' . $id . '/edit');
+            $this->redirect('/clients/' . $id . '/edit');
         }
     }
 
@@ -119,47 +120,18 @@ class ClientController extends Controller
     {
         if (!Helpers::verifyCsrf()) {
             $this->setFlash('error', I18n::t('messages.error'));
-            $this->redirect('/products');
+            $this->redirect('/clients');
         }
 
         $id = (int) $params['id'];
         
         try {
-            $this->productModel->delete($id);
+            $this->clientModel->delete($id);
             $this->setFlash('success', I18n::t('messages.deleted'));
         } catch (\Exception $e) {
             $this->setFlash('error', I18n::t('messages.error'));
         }
         
-        $this->redirect('/products');
-    }
-
-    private function getDropdownsForForm(): array
-    {
-        return [
-            'classifications' => $this->dropdownModel->getByCategory('classification'),
-            'colors' => $this->dropdownModel->getByCategory('color'),
-            'brands' => $this->dropdownModel->getByCategory('brand'),
-            'car_makes' => $this->dropdownModel->getByCategory('car_make'),
-            'car_models' => $this->dropdownModel->getByCategory('car_model')
-        ];
-    }
-
-    private function updateProductLocations(int $productId): void
-    {
-        $warehouses = Helpers::input('warehouses', []);
-        $quantities = Helpers::input('quantities', []);
-        $locations = Helpers::input('locations', []);
-        
-        if (is_array($warehouses)) {
-            foreach ($warehouses as $index => $warehouseId) {
-                $qty = (float) ($quantities[$index] ?? 0);
-                $location = $locations[$index] ?? '';
-                
-                if ($qty > 0) {
-                    $this->productModel->updateLocation($productId, (int)$warehouseId, $qty, $location);
-                }
-            }
-        }
+        $this->redirect('/clients');
     }
 }
