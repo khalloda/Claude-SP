@@ -93,20 +93,31 @@ function loadCarMakes() {
     // Clear current options except first
     parentSelect.innerHTML = '<option value="">Select Car Make</option>';
     
+    console.log('Loading car makes...');
+    
     // Make AJAX request to get car makes
     fetch('/dropdowns/get-by-parent?category=car_make')
-        .then(response => response.json())
+        .then(response => {
+            console.log('Car makes response status:', response.status);
+            return response.json();
+        })
         .then(data => {
-            if (data.success) {
+            console.log('Car makes data:', data);
+            if (data.success && data.data) {
                 data.data.forEach(make => {
                     const option = document.createElement('option');
                     option.value = make.id;
                     option.textContent = make.value;
                     parentSelect.appendChild(option);
                 });
+                console.log('Added', data.data.length, 'car makes');
+            } else {
+                console.error('No car makes found or API error:', data);
             }
         })
-        .catch(error => console.error('Error loading car makes:', error));
+        .catch(error => {
+            console.error('Error loading car makes:', error);
+        });
 }
 
 // Initialize on page load
