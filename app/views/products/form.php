@@ -214,24 +214,35 @@ function loadCarModels(makeValue) {
     const selectedOption = makeSelect.options[makeSelect.selectedIndex];
     const makeId = selectedOption.getAttribute('data-id');
     
+    console.log('Loading car models for make:', makeValue, 'ID:', makeId);
+    
     // Clear current options
     modelSelect.innerHTML = '<option value="">Select Car Model</option>';
     
     if (makeId) {
         // Make AJAX request to get models
         fetch(`/dropdowns/get-by-parent?parent_id=${makeId}&category=car_model`)
-            .then(response => response.json())
+            .then(response => {
+                console.log('Response status:', response.status);
+                return response.json();
+            })
             .then(data => {
-                if (data.success) {
+                console.log('Response data:', data);
+                if (data.success && data.data) {
                     data.data.forEach(model => {
                         const option = document.createElement('option');
                         option.value = model.value;
                         option.textContent = model.value;
                         modelSelect.appendChild(option);
                     });
+                    console.log('Added', data.data.length, 'car models');
+                } else {
+                    console.error('No models found or API error:', data);
                 }
             })
-            .catch(error => console.error('Error loading car models:', error));
+            .catch(error => {
+                console.error('Error loading car models:', error);
+            });
     }
 }
 
@@ -284,6 +295,14 @@ document.getElementById('classification').addEventListener('change', function() 
         // Auto-generate code preview (actual generation happens on server)
         const prefix = this.value.substring(0, 3).toUpperCase().replace(/[^A-Z]/g, '0');
         codeInput.placeholder = `Will be auto-generated (e.g., ${prefix}0001)`;
+    }
+});
+
+// Load car models on page load if editing and car make is selected
+document.addEventListener('DOMContentLoaded', function() {
+    const carMakeSelect = document.getElementById('car_make');
+    if (carMakeSelect.value) {
+        loadCarModels(carMakeSelect.value);
     }
 });
 </script>
