@@ -25,7 +25,7 @@ ob_start();
                     name="search" 
                     class="form-control" 
                     placeholder="<?= I18n::t('actions.search') ?>..." 
-                    value="<?= Helpers::escape($search) ?>"
+                    value="<?= Helpers::escape($search ?? '') ?>"
                     style="flex: 1;"
                 >
                 <button type="submit" class="btn btn-secondary"><?= I18n::t('actions.search') ?></button>
@@ -54,15 +54,15 @@ ob_start();
                             <tr>
                                 <td>
                                     <a href="/warehouses/<?= $warehouse['id'] ?>" style="text-decoration: none; color: #667eea;">
-                                        <?= Helpers::escape($warehouse['name']) ?>
+                                        <?= Helpers::escape($warehouse['name'] ?? '') ?>
                                     </a>
                                 </td>
-                                <td><?= Helpers::escape($warehouse['responsible_name']) ?></td>
-                                <td><?= Helpers::escape($warehouse['responsible_phone']) ?></td>
+                                <td><?= Helpers::escape($warehouse['responsible_name'] ?? '') ?></td>
+                                <td><?= Helpers::escape($warehouse['responsible_phone'] ?? '') ?></td>
                                 <td>
                                     <?= $warehouse['capacity'] ? number_format($warehouse['capacity'], 0) . ' m²' : '-' ?>
                                 </td>
-                                <td><?= Helpers::formatDate($warehouse['created_at']) ?></td>
+                                <td><?= Helpers::formatDate($warehouse['created_at'] ?? date('Y-m-d H:i:s')) ?></td>
                                 <td>
                                     <div style="display: flex; gap: 0.5rem;">
                                         <a href="/warehouses/<?= $warehouse['id'] ?>" class="btn btn-sm btn-secondary"><?= I18n::t('actions.view') ?></a>
