@@ -49,6 +49,11 @@ class WarehouseController extends Controller
             'responsible_email' => 'email'
         ]);
 
+        // Add the missing fields explicitly
+        $data['address'] = Helpers::input('address', '');
+        $data['capacity'] = Helpers::input('capacity', '') ? (float) Helpers::input('capacity') : null;
+        $data['responsible_phone'] = Helpers::input('responsible_phone', '');
+
         try {
             $this->warehouseModel->create($data);
             $this->setFlash('success', I18n::t('messages.created'));
@@ -101,6 +106,11 @@ class WarehouseController extends Controller
             'responsible_name' => 'required',
             'responsible_email' => 'email'
         ]);
+
+        // Add the missing fields explicitly
+        $data['address'] = Helpers::input('address', '');
+        $data['capacity'] = Helpers::input('capacity', '') ? (float) Helpers::input('capacity') : null;
+        $data['responsible_phone'] = Helpers::input('responsible_phone', '');
 
         try {
             $this->warehouseModel->update($id, $data);
