@@ -52,4 +52,10 @@ $router->group(['auth' => true], function(Router $r) {
 });
 
 // Handle the request
+$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+error_log("Requested path: " . $path);
+if ($path === '/dropdowns/get-by-parent') {
+    error_log("Matched dropdown AJAX route");
+}
 $router->resolve();
+
