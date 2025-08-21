@@ -19,7 +19,7 @@ class DropdownController extends Controller
 
     public function index(): void
     {
-        $category = Helpers::input('category', 'classification');
+        $category = Helpers::input('category', '');
         $dropdowns = $this->dropdownModel->getAllByCategory();
         $categories = $this->dropdownModel->getCategories();
         
@@ -29,11 +29,11 @@ class DropdownController extends Controller
     public function create(): void
     {
         $categories = $this->dropdownModel->getCategories();
-        $parentCategory = Helpers::input('parent_category');
+        $parentCategory = Helpers::input('parent_category', '');
         $parents = [];
         
-        if ($parentCategory) {
-            $parents = $this->dropdownModel->getByCategory($parentCategory);
+        if ($parentCategory === 'car_model') {
+            $parents = $this->dropdownModel->getByCategory('car_make');
         }
         
         $this->view('dropdowns/form', compact('categories', 'parents', 'parentCategory'));
@@ -52,8 +52,9 @@ class DropdownController extends Controller
         ]);
 
         // Handle parent_id
-        if (!empty(Helpers::input('parent_id'))) {
-            $data['parent_id'] = (int) Helpers::input('parent_id');
+        $parentId = Helpers::input('parent_id');
+        if (!empty($parentId)) {
+            $data['parent_id'] = (int) $parentId;
         }
 
         try {
@@ -64,6 +65,20 @@ class DropdownController extends Controller
             $this->setFlash('error', I18n::t('messages.error'));
             $this->redirect('/dropdowns/create');
         }
+    }
+
+    public function show(array $params): void
+    {
+        $id = (int) $params['id'];
+        $dropdown = $this->dropdownModel->find($id);
+        
+        if (!$dropdown) {
+            $this->setFlash('error', I18n::t('messages.not_found'));
+            $this->redirect('/dropdowns');
+        }
+        
+        // Simple show view
+        $this->view('dropdowns/show', compact('dropdown'));
     }
 
     public function edit(array $params): void
@@ -100,8 +115,9 @@ class DropdownController extends Controller
         ]);
 
         // Handle parent_id
-        if (!empty(Helpers::input('parent_id'))) {
-            $data['parent_id'] = (int) Helpers::input('parent_id');
+        $parentId = Helpers::input('parent_id');
+        if (!empty($parentId)) {
+            $data['parent_id'] = (int) $parentId;
         } else {
             $data['parent_id'] = null;
         }
@@ -144,33 +160,24 @@ class DropdownController extends Controller
         // Debug logging
         error_log("getByParent called with parent_id: $parentId, category: $category");
         
-        if ($category === 'car_make') {
-            // Return all car makes (no parent needed)
-            $items = $this->dropdownModel->getByCategory('car_make');
-            error_log("Returning car makes: " . json_encode($items));
-            $this->json(['success' => true, 'data' => $items]);
-        } elseif ($category === 'car_model' && $parentId) {
-            // Return car models for specific make
-            $items = $this->dropdownModel->getByCategory('car_model', (int)$parentId);
-            error_log("Returning car models for make $parentId: " . json_encode($items));
-            $this->json(['success' => true, 'data' => $items]);
-        } else {
-            error_log("Invalid parameters or missing parent_id for car_model");
-            $this->json(['success' => false, 'message' => 'Invalid parameters']);
+        try {
+            if ($category === 'car_make') {
+                // Return all car makes (no parent needed)
+                $items = $this->dropdownModel->getByCategory('car_make');
+                error_log("Returning car makes: " . count($items) . " items");
+                $this->json(['success' => true, 'data' => $items]);
+            } elseif ($category === 'car_model' && $parentId) {
+                // Return car models for specific make
+                $items = $this->dropdownModel->getByCategory('car_model', (int)$parentId);
+                error_log("Returning car models for make $parentId: " . count($items) . " items");
+                $this->json(['success' => true, 'data' => $items]);
+            } else {
+                error_log("Invalid parameters: category=$category, parent_id=$parentId");
+                $this->json(['success' => false, 'message' => 'Invalid parameters']);
+            }
+        } catch (\Exception $e) {
+            error_log("Error in getByParent: " . $e->getMessage());
+            $this->json(['success' => false, 'error' => $e->getMessage()]);
         }
-    }
-
-    public function show(array $params): void
-    {
-        // This method was missing - needed for resource routes
-        $id = (int) $params['id'];
-        $dropdown = $this->dropdownModel->find($id);
-        
-        if (!$dropdown) {
-            $this->setFlash('error', I18n::t('messages.not_found'));
-            $this->redirect('/dropdowns');
-        }
-        
-        $this->view('dropdowns/show', compact('dropdown'));
     }
 }
