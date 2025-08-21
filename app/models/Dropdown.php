@@ -78,4 +78,16 @@ class Dropdown extends Model
             throw $e;
         }
     }
+
+    // Get all car makes for the dropdown
+    public function getCarMakes(): array
+    {
+        return $this->getByCategory('car_make');
+    }
+
+    // Get car models by car make ID
+    public function getCarModelsByMake(int $makeId): array
+    {
+        return $this->getByCategory('car_model', $makeId);
+    }
 }
