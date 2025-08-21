@@ -8,6 +8,7 @@ require_once __DIR__ . '/../app/core/Autoloader.php';
 use App\Core\Autoloader;
 use App\Core\Router;
 use App\Core\I18n;
+use App\Core\Auth;
 use App\Config\Config;
 use App\Controllers\DropdownController;
 
@@ -25,7 +26,6 @@ I18n::init($requestedLang);
 $path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 if ($path === '/dropdowns/get-by-parent' && $_SERVER['REQUEST_METHOD'] === 'GET') {
     // Check authentication
-    use App\Core\Auth;
     if (!Auth::check()) {
         http_response_code(401);
         header('Content-Type: application/json');
