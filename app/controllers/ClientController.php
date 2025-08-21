@@ -49,6 +49,10 @@ class ClientController extends Controller
             'email' => 'email'
         ]);
 
+        // Add the missing fields explicitly
+        $data['phone'] = Helpers::input('phone', '');
+        $data['address'] = Helpers::input('address', '');
+
         try {
             $this->clientModel->create($data);
             $this->setFlash('success', I18n::t('messages.created'));
@@ -105,6 +109,10 @@ class ClientController extends Controller
             'name' => 'required',
             'email' => 'email'
         ]);
+
+        // Add the missing fields explicitly
+        $data['phone'] = Helpers::input('phone', '');
+        $data['address'] = Helpers::input('address', '');
 
         try {
             $this->clientModel->update($id, $data);
