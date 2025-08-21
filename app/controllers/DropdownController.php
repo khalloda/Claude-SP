@@ -138,13 +138,24 @@ class DropdownController extends Controller
     // AJAX endpoint for dependent dropdowns
     public function getByParent(): void
     {
-        $parentId = (int) Helpers::input('parent_id');
+        $parentId = Helpers::input('parent_id');
         $category = Helpers::input('category');
         
-        if ($parentId && $category) {
-            $items = $this->dropdownModel->getByCategory($category, $parentId);
+        // Debug logging
+        error_log("getByParent called with parent_id: $parentId, category: $category");
+        
+        if ($category === 'car_make') {
+            // Return all car makes (no parent needed)
+            $items = $this->dropdownModel->getByCategory('car_make');
+            error_log("Returning car makes: " . json_encode($items));
+            $this->json(['success' => true, 'data' => $items]);
+        } elseif ($category === 'car_model' && $parentId) {
+            // Return car models for specific make
+            $items = $this->dropdownModel->getByCategory('car_model', (int)$parentId);
+            error_log("Returning car models for make $parentId: " . json_encode($items));
             $this->json(['success' => true, 'data' => $items]);
         } else {
+            error_log("Invalid parameters or missing parent_id for car_model");
             $this->json(['success' => false, 'message' => 'Invalid parameters']);
         }
     }
