@@ -64,8 +64,18 @@ class Helpers
         unset($_SESSION['old'], $_SESSION['errors']);
     }
 
-    public static function escape(string $value): string
+    public static function escape($value): string
     {
+        // Handle null and non-string values safely
+        if ($value === null) {
+            return '';
+        }
+        
+        // Convert to string if it's not already
+        if (!is_string($value)) {
+            $value = (string) $value;
+        }
+        
         return htmlspecialchars($value, ENT_QUOTES, 'UTF-8');
     }
 
