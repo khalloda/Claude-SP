@@ -159,4 +159,18 @@ class DropdownController extends Controller
             $this->json(['success' => false, 'message' => 'Invalid parameters']);
         }
     }
+
+    public function show(array $params): void
+    {
+        // This method was missing - needed for resource routes
+        $id = (int) $params['id'];
+        $dropdown = $this->dropdownModel->find($id);
+        
+        if (!$dropdown) {
+            $this->setFlash('error', I18n::t('messages.not_found'));
+            $this->redirect('/dropdowns');
+        }
+        
+        $this->view('dropdowns/show', compact('dropdown'));
+    }
 }
