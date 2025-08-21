@@ -46,9 +46,9 @@ $router->group(['auth' => true], function(Router $r) {
     // Products
     $r->resource('/products', 'ProductController');
     
-    // Dropdowns
-    $r->resource('/dropdowns', 'DropdownController');
+    // Dropdowns - IMPORTANT: Specific routes MUST come before resource routes
     $r->get('/dropdowns/get-by-parent', 'DropdownController@getByParent');
+    $r->resource('/dropdowns', 'DropdownController');
 });
 
 // Handle the request
