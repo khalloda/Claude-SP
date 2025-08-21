@@ -12,11 +12,11 @@ class Warehouse extends Model
     
     protected array $fillable = [
         'name',
-        'address',                    // This was missing
+        'address',
         'capacity',
         'responsible_name',
         'responsible_email',
-        'responsible_phone'           // This was missing
+        'responsible_phone'
     ];
 
     public function search(string $query, int $page = 1, int $perPage = 15): array
