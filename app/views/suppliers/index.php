@@ -59,4 +59,68 @@ ob_start();
                                 </td>
                                 <td><?= Helpers::escape(ucfirst($supplier['type'])) ?></td>
                                 <td><?= Helpers::escape($supplier['email']) ?></td>
-                                <td><?= Helpers::escape
+                                <td><?= Helpers::escape($supplier['phone']) ?></td>
+                                <td><?= Helpers::formatDate($supplier['created_at']) ?></td>
+                                <td>
+                                    <div style="display: flex; gap: 0.5rem;">
+                                        <a href="/suppliers/<?= $supplier['id'] ?>" class="btn btn-sm btn-secondary"><?= I18n::t('actions.view') ?></a>
+                                        <a href="/suppliers/<?= $supplier['id'] ?>/edit" class="btn btn-sm btn-primary"><?= I18n::t('actions.edit') ?></a>
+                                        <form method="POST" action="/suppliers/<?= $supplier['id'] ?>/delete" style="display: inline;" 
+                                              onsubmit="return confirm('Are you sure you want to delete this supplier?')">
+                                            <?= Helpers::csrfField() ?>
+                                            <button type="submit" class="btn btn-sm btn-danger"><?= I18n::t('actions.delete') ?></button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    <?php else: ?>
+                        <tr>
+                            <td colspan="6" style="text-align: center; padding: 2rem; color: #666;">
+                                No suppliers found
+                            </td>
+                        </tr>
+                    <?php endif; ?>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <?php if ($suppliers['last_page'] > 1): ?>
+            <div class="pagination-wrapper">
+                <?php
+                $currentPage = $suppliers['current_page'];
+                $lastPage = $suppliers['last_page'];
+                $searchParam = !empty($search) ? '&search=' . urlencode($search) : '';
+                ?>
+                
+                <div style="display: flex; justify-content: center; gap: 0.5rem; margin-top: 2rem;">
+                    <?php if ($currentPage > 1): ?>
+                        <a href="/suppliers?page=<?= $currentPage - 1 ?><?= $searchParam ?>" class="btn btn-secondary">Previous</a>
+                    <?php endif; ?>
+                    
+                    <?php for ($i = max(1, $currentPage - 2); $i <= min($lastPage, $currentPage + 2); $i++): ?>
+                        <?php if ($i == $currentPage): ?>
+                            <span class="btn btn-primary"><?= $i ?></span>
+                        <?php else: ?>
+                            <a href="/suppliers?page=<?= $i ?><?= $searchParam ?>" class="btn btn-secondary"><?= $i ?></a>
+                        <?php endif; ?>
+                    <?php endfor; ?>
+                    
+                    <?php if ($currentPage < $lastPage): ?>
+                        <a href="/suppliers?page=<?= $currentPage + 1 ?><?= $searchParam ?>" class="btn btn-secondary">Next</a>
+                    <?php endif; ?>
+                </div>
+                
+                <div style="text-align: center; margin-top: 1rem; color: #666;">
+                    Showing <?= $suppliers['from'] ?> to <?= $suppliers['to'] ?> of <?= $suppliers['total'] ?> results
+                </div>
+            </div>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php
+$content = ob_get_clean();
+include __DIR__ . '/../layouts/base.php';
+?>
