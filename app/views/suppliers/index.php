@@ -25,7 +25,7 @@ ob_start();
                     name="search" 
                     class="form-control" 
                     placeholder="<?= I18n::t('actions.search') ?>..." 
-                    value="<?= Helpers::escape($search) ?>"
+                    value="<?= Helpers::escape($search ?? '') ?>"
                     style="flex: 1;"
                 >
                 <button type="submit" class="btn btn-secondary"><?= I18n::t('actions.search') ?></button>
@@ -54,13 +54,13 @@ ob_start();
                             <tr>
                                 <td>
                                     <a href="/suppliers/<?= $supplier['id'] ?>" style="text-decoration: none; color: #667eea;">
-                                        <?= Helpers::escape($supplier['name']) ?>
+                                        <?= Helpers::escape($supplier['name'] ?? '') ?>
                                     </a>
                                 </td>
-                                <td><?= Helpers::escape(ucfirst($supplier['type'])) ?></td>
-                                <td><?= Helpers::escape($supplier['email']) ?></td>
-                                <td><?= Helpers::escape($supplier['phone']) ?></td>
-                                <td><?= Helpers::formatDate($supplier['created_at']) ?></td>
+                                <td><?= Helpers::escape(ucfirst($supplier['type'] ?? '')) ?></td>
+                                <td><?= Helpers::escape($supplier['email'] ?? '') ?></td>
+                                <td><?= Helpers::escape($supplier['phone'] ?? '') ?></td>
+                                <td><?= Helpers::formatDate($supplier['created_at'] ?? date('Y-m-d H:i:s')) ?></td>
                                 <td>
                                     <div style="display: flex; gap: 0.5rem;">
                                         <a href="/suppliers/<?= $supplier['id'] ?>" class="btn btn-sm btn-secondary"><?= I18n::t('actions.view') ?></a>
