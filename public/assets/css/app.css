@@ -83,6 +83,47 @@ body {
     background-color: rgba(255,255,255,0.1);
 }
 
+/* Dropdown Menus */
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-toggle::after {
+    content: ' ▼';
+    font-size: 0.8rem;
+}
+
+.dropdown-menu {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    background: white;
+    min-width: 200px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border-radius: 5px;
+    z-index: 1000;
+    border: 1px solid #ddd;
+}
+
+.dropdown:hover .dropdown-menu {
+    display: block;
+}
+
+.dropdown-item {
+    display: block;
+    padding: 0.5rem 1rem;
+    text-decoration: none;
+    color: #333;
+    transition: background-color 0.3s;
+}
+
+.dropdown-item:hover {
+    background-color: #f8f9fa;
+    color: #667eea;
+}
+
 /* Cards */
 .card {
     background: white;
@@ -135,6 +176,12 @@ body {
     box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
 }
 
+.form-text {
+    font-size: 0.875rem;
+    color: #6c757d;
+    margin-top: 0.25rem;
+}
+
 /* Buttons */
 .btn {
     padding: 0.75rem 1.5rem;
@@ -174,6 +221,70 @@ body {
     color: white;
 }
 
+/* Button Sizes */
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Tables */
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.table th,
+.table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+    text-align: left;
+}
+
+.table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    color: #495057;
+}
+
+.table tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+.table-responsive {
+    overflow-x: auto;
+}
+
+/* Grid System */
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    margin: -0.5rem;
+}
+
+.col-md-6 {
+    flex: 0 0 50%;
+    max-width: 50%;
+    padding: 0.5rem;
+}
+
+.col-md-4 {
+    flex: 0 0 33.333333%;
+    max-width: 33.333333%;
+    padding: 0.5rem;
+}
+
+.col-md-8 {
+    flex: 0 0 66.666667%;
+    max-width: 66.666667%;
+    padding: 0.5rem;
+}
+
 /* Alerts */
 .alert {
     padding: 1rem;
@@ -197,6 +308,55 @@ body {
     background-color: #d1ecf1;
     color: #0c5460;
     border: 1px solid #bee5eb;
+}
+
+/* Badges */
+.badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: white;
+}
+
+.badge-sent { background-color: #6c757d; }
+.badge-approved { background-color: #28a745; }
+.badge-rejected { background-color: #dc3545; }
+.badge-open { background-color: #007bff; }
+.badge-delivered { background-color: #28a745; }
+.badge-partial { background-color: #ffc107; color: #000; }
+.badge-paid { background-color: #28a745; }
+.badge-void { background-color: #6c757d; }
+.badge-success { background-color: #28a745; }
+.badge-danger { background-color: #dc3545; }
+
+/* Stock Indicators */
+.stock-indicator {
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    background-color: #28a745;
+    color: white;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.stock-indicator.low-stock {
+    background-color: #dc3545;
+}
+
+/* Warehouse Location Rows */
+.warehouse-location-row {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 5px;
+    border: 1px solid #dee2e6;
+    margin-bottom: 1rem;
+}
+
+.warehouse-location-row label {
+    font-size: 0.875rem;
+    color: #495057;
+    margin-bottom: 0.25rem;
 }
 
 /* Login page */
@@ -276,6 +436,15 @@ body {
     font-size: 1.1rem;
 }
 
+/* Pagination */
+.pagination-wrapper {
+    margin-top: 2rem;
+}
+
+.pagination-wrapper .btn {
+    margin: 0 0.25rem;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .navbar-content {
@@ -286,6 +455,26 @@ body {
     .navbar-nav {
         flex-direction: column;
         gap: 0.5rem;
+        width: 100%;
+    }
+    
+    .dropdown-menu {
+        position: static;
+        display: block;
+        box-shadow: none;
+        border: none;
+        background: rgba(255,255,255,0.1);
+        margin-top: 0.5rem;
+    }
+    
+    .dropdown-item {
+        color: white;
+        padding: 0.25rem 1rem;
+    }
+    
+    .dropdown-item:hover {
+        background-color: rgba(255,255,255,0.1);
+        color: white;
     }
     
     .main-content {
@@ -295,4 +484,26 @@ body {
     .dashboard-stats {
         grid-template-columns: 1fr;
     }
+    
+    .col-md-6,
+    .col-md-4,
+    .col-md-8 {
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+}
+
+/* RTL Enhancements */
+[dir="rtl"] .dropdown-menu {
+    left: auto;
+    right: 0;
+}
+
+[dir="rtl"] .table th,
+[dir="rtl"] .table td {
+    text-align: right;
+}
+
+[dir="rtl"] .warehouse-location-row {
+    direction: rtl;
 }
