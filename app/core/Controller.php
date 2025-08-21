@@ -55,6 +55,10 @@ class Controller
                 $errors[$field] = I18n::t('validation.email');
             }
 
+            if (strpos($rule, 'numeric') !== false && !empty($value) && !is_numeric($value)) {
+                $errors[$field] = "The {$field} must be a number";
+            }
+
             if (strpos($rule, 'min:') !== false && !empty($value)) {
                 $min = (int) substr($rule, strpos($rule, 'min:') + 4);
                 if (strlen($value) < $min) {
