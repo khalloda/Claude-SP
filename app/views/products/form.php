@@ -214,35 +214,39 @@ function loadCarModels(makeValue) {
     const selectedOption = makeSelect.options[makeSelect.selectedIndex];
     const makeId = selectedOption.getAttribute('data-id');
     
-    console.log('Loading car models for make:', makeValue, 'ID:', makeId);
+    console.log('🚗 Loading car models for make:', makeValue, 'ID:', makeId);
     
     // Clear current options
     modelSelect.innerHTML = '<option value="">Select Car Model</option>';
     
-    if (makeId) {
+    if (makeId && makeId !== '') {
+        console.log('🔄 Fetching from:', `/dropdowns/get-by-parent?parent_id=${makeId}&category=car_model`);
+        
         // Make AJAX request to get models
         fetch(`/dropdowns/get-by-parent?parent_id=${makeId}&category=car_model`)
             .then(response => {
-                console.log('Response status:', response.status);
+                console.log('📡 Response status:', response.status);
                 return response.json();
             })
             .then(data => {
-                console.log('Response data:', data);
-                if (data.success && data.data) {
+                console.log('📦 Response data:', data);
+                if (data.success && data.data && data.data.length > 0) {
                     data.data.forEach(model => {
                         const option = document.createElement('option');
                         option.value = model.value;
                         option.textContent = model.value;
                         modelSelect.appendChild(option);
                     });
-                    console.log('Added', data.data.length, 'car models');
+                    console.log('✅ Added', data.data.length, 'car models');
                 } else {
-                    console.error('No models found or API error:', data);
+                    console.log('⚠️ No models found for this make');
                 }
             })
             .catch(error => {
-                console.error('Error loading car models:', error);
+                console.error('❌ Error loading car models:', error);
             });
+    } else {
+        console.log('⚠️ No make ID found');
     }
 }
 
