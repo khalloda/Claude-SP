@@ -59,6 +59,13 @@ class ProductController extends Controller
             'sale_price' => 'required|numeric'
         ]);
 
+        // Add all the optional fields explicitly
+        $data['color'] = Helpers::input('color', '');
+        $data['brand'] = Helpers::input('brand', '');
+        $data['car_make'] = Helpers::input('car_make', '');
+        $data['car_model'] = Helpers::input('car_model', '');
+        $data['total_qty'] = (float) Helpers::input('total_qty', 0);
+
         try {
             $productId = $this->productModel->create($data);
             
@@ -120,6 +127,13 @@ class ProductController extends Controller
             'cost_price' => 'required|numeric',
             'sale_price' => 'required|numeric'
         ]);
+
+        // Add all the optional fields explicitly
+        $data['color'] = Helpers::input('color', '');
+        $data['brand'] = Helpers::input('brand', '');
+        $data['car_make'] = Helpers::input('car_make', '');
+        $data['car_model'] = Helpers::input('car_model', '');
+        $data['total_qty'] = (float) Helpers::input('total_qty', 0);
 
         try {
             $this->productModel->update($id, $data);
