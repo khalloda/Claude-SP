@@ -113,6 +113,7 @@ ob_start();
                                 </option>
                             <?php endif; ?>
                         </select>
+                        <small id="car_model_status" class="form-text"></small>
                     </div>
                     
                     <div class="form-group">
@@ -207,47 +208,110 @@ ob_start();
 </div>
 
 <script>
-// Load car models based on selected car make
+// Enhanced loadCarModels function with better error handling and debugging
 function loadCarModels(makeValue) {
     const modelSelect = document.getElementById('car_model');
     const makeSelect = document.getElementById('car_make');
+    const statusElement = document.getElementById('car_model_status');
     const selectedOption = makeSelect.options[makeSelect.selectedIndex];
     const makeId = selectedOption.getAttribute('data-id');
     
     console.log('🚗 Loading car models for make:', makeValue, 'ID:', makeId);
     
-    // Clear current options
-    modelSelect.innerHTML = '<option value="">Select Car Model</option>';
+    // Show loading status
+    statusElement.textContent = 'Loading models...';
+    statusElement.style.color = '#007bff';
     
-    if (makeId && makeId !== '') {
-        console.log('🔄 Fetching from:', `/dropdowns/get-by-parent?parent_id=${makeId}&category=car_model`);
-        
-        // Make AJAX request to get models
-        fetch(`/dropdowns/get-by-parent?parent_id=${makeId}&category=car_model`)
-            .then(response => {
-                console.log('📡 Response status:', response.status);
-                return response.json();
-            })
-            .then(data => {
-                console.log('📦 Response data:', data);
-                if (data.success && data.data && data.data.length > 0) {
-                    data.data.forEach(model => {
-                        const option = document.createElement('option');
-                        option.value = model.value;
-                        option.textContent = model.value;
-                        modelSelect.appendChild(option);
-                    });
-                    console.log('✅ Added', data.data.length, 'car models');
-                } else {
-                    console.log('⚠️ No models found for this make');
-                }
-            })
-            .catch(error => {
-                console.error('❌ Error loading car models:', error);
-            });
-    } else {
+    // Clear current options except the first
+    modelSelect.innerHTML = '<option value="">Loading...</option>';
+    
+    if (!makeId || makeId === '') {
         console.log('⚠️ No make ID found');
+        modelSelect.innerHTML = '<option value="">Select Car Model</option>';
+        statusElement.textContent = '';
+        return;
     }
+    
+    const url = `/dropdowns/get-by-parent?parent_id=${makeId}&category=car_model`;
+    console.log('🔄 Fetching from:', url);
+    
+    // Make AJAX request to get models
+    fetch(url, {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => {
+        console.log('📡 Response status:', response.status);
+        console.log('📡 Response headers:', response.headers);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        // First get as text to see raw response
+        return response.text();
+    })
+    .then(text => {
+        console.log('📦 Raw response text:', text);
+        
+        // Try to parse as JSON
+        try {
+            return JSON.parse(text);
+        } catch (parseError) {
+            console.error('❌ JSON parse error:', parseError);
+            throw new Error(`Invalid JSON response: ${text.substring(0, 200)}...`);
+        }
+    })
+    .then(data => {
+        console.log('📦 Parsed response data:', data);
+        
+        // Clear loading state
+        modelSelect.innerHTML = '<option value="">Select Car Model</option>';
+        statusElement.textContent = '';
+        
+        if (data.success) {
+            if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                data.data.forEach(model => {
+                    const option = document.createElement('option');
+                    option.value = model.value;
+                    option.textContent = model.value;
+                    modelSelect.appendChild(option);
+                });
+                console.log('✅ Added', data.data.length, 'car models');
+                statusElement.textContent = `Found ${data.data.length} models`;
+                statusElement.style.color = '#28a745';
+            } else {
+                console.log('⚠️ No models found for this make');
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No models available for this make';
+                option.disabled = true;
+                modelSelect.appendChild(option);
+                statusElement.textContent = 'No models found for this make';
+                statusElement.style.color = '#ffc107';
+            }
+        } else {
+            throw new Error(data.message || data.error || 'Unknown API error');
+        }
+    })
+    .catch(error => {
+        console.error('❌ Error loading car models:', error);
+        
+        // Show error state
+        modelSelect.innerHTML = '<option value="">Error loading models</option>';
+        statusElement.textContent = `Error: ${error.message}`;
+        statusElement.style.color = '#dc3545';
+        
+        // Add a retry option
+        const retryOption = document.createElement('option');
+        retryOption.value = '';
+        retryOption.textContent = 'Click to retry...';
+        retryOption.onclick = () => loadCarModels(makeValue);
+        modelSelect.appendChild(retryOption);
+    });
 }
 
 // Add warehouse location row
@@ -304,11 +368,59 @@ document.getElementById('classification').addEventListener('change', function() 
 
 // Load car models on page load if editing and car make is selected
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Page loaded, checking for selected car make...');
+    
     const carMakeSelect = document.getElementById('car_make');
+    const carModelSelect = document.getElementById('car_model');
+    
+    console.log('🔍 Car make value:', carMakeSelect.value);
+    console.log('🔍 Available car makes:', Array.from(carMakeSelect.options).map(opt => ({value: opt.value, text: opt.text, id: opt.getAttribute('data-id')})));
+    
     if (carMakeSelect.value) {
+        console.log('🔄 Auto-loading car models for selected make');
         loadCarModels(carMakeSelect.value);
     }
+    
+    // Debug: Add a test button (remove in production)
+    const debugDiv = document.createElement('div');
+    debugDiv.style.cssText = 'margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px; font-size: 12px;';
+    debugDiv.innerHTML = `
+        <strong>Debug Tools:</strong>
+        <button type="button" onclick="testAjaxEndpoint()" style="margin-left: 10px; padding: 2px 8px; font-size: 11px;">Test AJAX Endpoint</button>
+        <button type="button" onclick="showDebugInfo()" style="margin-left: 5px; padding: 2px 8px; font-size: 11px;">Show Debug Info</button>
+    `;
+    carModelSelect.parentNode.appendChild(debugDiv);
 });
+
+// Debug functions (remove in production)
+function testAjaxEndpoint() {
+    const makeSelect = document.getElementById('car_make');
+    const selectedOption = makeSelect.options[makeSelect.selectedIndex];
+    const makeId = selectedOption.getAttribute('data-id');
+    
+    if (makeId) {
+        const testUrl = `/dropdowns/get-by-parent?parent_id=${makeId}&category=car_model`;
+        window.open(testUrl, '_blank');
+    } else {
+        alert('Please select a car make first');
+    }
+}
+
+function showDebugInfo() {
+    const makeSelect = document.getElementById('car_make');
+    const modelSelect = document.getElementById('car_model');
+    
+    const debugInfo = {
+        selectedMakeValue: makeSelect.value,
+        selectedMakeId: makeSelect.options[makeSelect.selectedIndex].getAttribute('data-id'),
+        modelOptions: Array.from(modelSelect.options).map(opt => opt.value),
+        currentUrl: window.location.href,
+        sessionInfo: 'Check browser console for session details'
+    };
+    
+    console.log('🔍 Debug Info:', debugInfo);
+    alert('Debug info logged to console. Check browser dev tools.');
+}
 </script>
 
 <?php
