@@ -34,6 +34,17 @@ $arUrl = $basePath . '?lang=ar';
                     </div>
                 </li>
                 
+                <!-- Sales Flow Menu -->
+                <li class="dropdown">
+                    <a href="#" class="nav-link dropdown-toggle">Sales</a>
+                    <div class="dropdown-menu">
+                        <a href="/quotes" class="dropdown-item"><?= I18n::t('navigation.quotes') ?></a>
+                        <a href="/salesorders" class="dropdown-item"><?= I18n::t('navigation.sales_orders') ?></a>
+                        <a href="/invoices" class="dropdown-item"><?= I18n::t('navigation.invoices') ?></a>
+                        <a href="/payments" class="dropdown-item"><?= I18n::t('navigation.payments') ?></a>
+                    </div>
+                </li>
+                
                 <!-- Language Switcher -->
                 <li class="lang-switcher">
                     <a href="<?= $enUrl ?>" class="lang-link <?= I18n::getLocale() === 'en' ? 'active' : '' ?>">EN</a>
