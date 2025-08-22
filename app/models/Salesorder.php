@@ -86,30 +86,34 @@ class SalesOrder extends Model
         return $stmt->fetchAll();
     }
 
+    // MISSING METHOD IMPLEMENTATION:
     public function updateStatus(int $salesOrderId, string $status): bool
     {
-        $validStatuses = ['open', 'delivered', 'rejected'];
+        $validStatuses = ['open', 'shipped', 'delivered', 'rejected', 'cancelled'];
         if (!in_array($status, $validStatuses)) {
             return false;
         }
         
-        $oldOrder = $this->find($salesOrderId);
-        if (!$oldOrder) {
+        $oldSalesOrder = $this->find($salesOrderId);
+        if (!$oldSalesOrder) {
             return false;
         }
         
         DB::beginTransaction();
         
         try {
-            // Handle status changes
-            if ($status === 'delivered' && $oldOrder['status'] !== 'delivered') {
-                // Reduce actual stock and remove reservations
-                $this->deliverStock($salesOrderId);
-            } elseif ($status === 'rejected' && $oldOrder['status'] !== 'rejected') {
-                // Release stock reservations
-                $this->releaseStock($salesOrderId);
+            // Handle stock based on status changes
+            if ($status === 'shipped' && $oldSalesOrder['status'] !== 'shipped') {
+                // When shipping, deduct from actual stock and clear reservations
+                $this->fulfillStock($salesOrderId);
+            } elseif ($status === 'rejected' || $status === 'cancelled') {
+                // When rejecting/cancelling, release stock reservations
+                if ($oldSalesOrder['status'] !== 'rejected' && $oldSalesOrder['status'] !== 'cancelled') {
+                    $this->releaseStock($salesOrderId);
+                }
             }
             
+            // Update the status
             $result = $this->update($salesOrderId, ['status' => $status]);
             
             DB::commit();
@@ -121,22 +125,21 @@ class SalesOrder extends Model
         }
     }
 
-    private function deliverStock(int $salesOrderId): void
+    private function fulfillStock(int $salesOrderId): void
     {
         $items = $this->getItems($salesOrderId);
         
         foreach ($items as $item) {
-            // Reduce total quantity and reserved orders
-            $sql = "UPDATE sp_products SET 
-                    total_qty = total_qty - ?, 
-                    reserved_orders = reserved_orders - ? 
+            // Deduct from actual stock and clear reservations
+            $sql = "UPDATE sp_products 
+                    SET total_qty = total_qty - ?,
+                        reserved_orders = reserved_orders - ?
                     WHERE id = ?";
             DB::query($sql, [$item['qty'], $item['qty'], $item['product_id']]);
             
             // Record stock movement
-            $stockMovementSql = "INSERT INTO sp_stock_movements 
-                               (product_id, direction, qty, reason, ref_table, ref_id)
-                               VALUES (?, 'out', ?, 'Sales Order Delivery', 'sp_sales_orders', ?)";
+            $stockMovementSql = "INSERT INTO sp_stock_movements (product_id, type, qty, reference_id, reference_type, notes, created_at)
+                                VALUES (?, 'out', ?, ?, 'sales_order', 'Shipped to customer', NOW())";
             DB::query($stockMovementSql, [$item['product_id'], $item['qty'], $salesOrderId]);
         }
     }
@@ -161,8 +164,8 @@ class SalesOrder extends Model
             throw new \Exception('Sales order not found');
         }
         
-        if ($salesOrder['status'] === 'rejected') {
-            throw new \Exception('Cannot create invoice for rejected sales order');
+        if ($salesOrder['status'] === 'rejected' || $salesOrder['status'] === 'cancelled') {
+            throw new \Exception('Cannot create invoice for rejected or cancelled sales order');
         }
         
         DB::beginTransaction();
@@ -217,53 +220,56 @@ class SalesOrder extends Model
         }
     }
 
-    public function paginate(int $page = 1, int $perPage = 15): array
+    public function getDeliveryStatus(int $salesOrderId): array
     {
-        $offset = ($page - 1) * $perPage;
+        $sql = "SELECT status, updated_at FROM {$this->table} WHERE id = ?";
+        $stmt = DB::query($sql, [$salesOrderId]);
+        $result = $stmt->fetch();
         
-        // Get total count
-        $totalStmt = DB::query("SELECT COUNT(*) as total FROM {$this->table}");
-        $total = $totalStmt->fetch()['total'];
-        
-        // Get paginated results with client names
-        $stmt = DB::query("SELECT so.*, c.name as client_name, c.type as client_type
-                          FROM {$this->table} so
-                          LEFT JOIN sp_clients c ON so.client_id = c.id
-                          ORDER BY so.created_at DESC 
-                          LIMIT ? OFFSET ?", [$perPage, $offset]);
-        $data = $stmt->fetchAll();
+        if (!$result) {
+            return ['status' => 'unknown', 'updated_at' => null];
+        }
         
         return [
-            'data' => $data,
-            'total' => $total,
-            'per_page' => $perPage,
-            'current_page' => $page,
-            'last_page' => (int) ceil($total / $perPage),
-            'from' => $offset + 1,
-            'to' => min($offset + $perPage, $total)
+            'status' => $result['status'],
+            'updated_at' => $result['updated_at'],
+            'is_delivered' => $result['status'] === 'delivered',
+            'is_shipped' => in_array($result['status'], ['shipped', 'delivered']),
+            'can_ship' => $result['status'] === 'open',
+            'can_cancel' => !in_array($result['status'], ['delivered', 'cancelled'])
         ];
     }
 
-    public function delete(int $id): bool
+    public function getStockAvailability(int $salesOrderId): array
     {
-        DB::beginTransaction();
+        $items = $this->getItems($salesOrderId);
+        $availability = [];
         
-        try {
-            // Release stock reservations
-            $this->releaseStock($id);
-            
-            // Delete items first
-            DB::query("DELETE FROM sp_sales_order_items WHERE sales_order_id = ?", [$id]);
-            
-            // Delete sales order
-            $result = parent::delete($id);
-            
-            DB::commit();
-            return $result;
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
+        foreach ($items as $item) {
+            $availableQty = $item['available_qty'] - $item['qty']; // Current stock minus this order's qty
+            $availability[] = [
+                'product_id' => $item['product_id'],
+                'product_name' => $item['product_name'],
+                'required_qty' => $item['qty'],
+                'available_qty' => $item['available_qty'],
+                'sufficient_stock' => $item['available_qty'] >= $item['qty'],
+                'shortage' => max(0, $item['qty'] - $item['available_qty'])
+            ];
         }
+        
+        return $availability;
+    }
+
+    public function canBeFulfilled(int $salesOrderId): bool
+    {
+        $availability = $this->getStockAvailability($salesOrderId);
+        
+        foreach ($availability as $item) {
+            if (!$item['sufficient_stock']) {
+                return false;
+            }
+        }
+        
+        return true;
     }
 }
