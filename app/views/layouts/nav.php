@@ -52,12 +52,31 @@ $arUrl = $basePath . '?lang=ar';
                 </li>
                 
                 <!-- User Menu -->
-                <?php if (Auth::check()): ?>
-                    <li>
-                        <span class="nav-link">Welcome, <?= Helpers::escape(Auth::user()['name']) ?></span>
-                    </li>
-                    <li><a href="/logout" class="nav-link"><?= I18n::t('auth.logout') ?></a></li>
-                <?php endif; ?>
+                <!-- Enhanced User Menu Dropdown -->
+<?php if (Auth::check()): ?>
+    <li class="dropdown">
+        <a href="#" class="nav-link dropdown-toggle">
+            <i class="fas fa-user me-2"></i><?= Helpers::escape(Auth::user()['name']) ?>
+        </a>
+        <div class="dropdown-menu dropdown-menu-end">
+            <h6 class="dropdown-header">Welcome back!</h6>
+            
+            <!-- Admin-only Currencies Menu -->
+            <?php if (($_SESSION['role'] ?? '') === 'admin'): ?>
+                <li><a class="dropdown-item" href="/currencies"><i class="fas fa-coins me-2"></i>Manage Currencies</a></li>
+                <li><hr class="dropdown-divider"></li>
+            <?php endif; ?>
+            
+            <!-- User Preferences -->
+            <li><a class="dropdown-item" href="/profile"><i class="fas fa-user-cog me-2"></i>Profile Settings</a></li>
+            <li><a class="dropdown-item" href="#" onclick="showCurrencySelector()"><i class="fas fa-money-bill-wave me-2"></i>Change Currency</a></li>
+            <li><hr class="dropdown-divider"></li>
+            
+            <!-- Logout -->
+            <li><a class="dropdown-item text-danger" href="/logout"><i class="fas fa-sign-out-alt me-2"></i><?= I18n::t('auth.logout') ?></a></li>
+        </div>
+    </li>
+<?php endif; ?>
             </ul>
         </div>
     </div>
