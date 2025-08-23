@@ -10,55 +10,59 @@ class Quote extends Model
 {
     protected string $table = 'sp_quotes';
     
-    protected array $fillable = [
-        'client_id',
-        'status',
-        'items_subtotal',
-        'items_tax_total',
-        'items_discount_total',
-        'global_tax_type',
-        'global_tax_value',
-        'global_discount_type',
-        'global_discount_value',
-        'tax_total',
-        'discount_total',
-        'grand_total',
-        'notes'
-    ];
+protected array $fillable = [
+    'client_id',
+    'status',
+    'currency_code',        // NEW
+    'exchange_rate',        // NEW
+    'items_subtotal',
+    'items_tax_total',
+    'items_discount_total',
+    'global_tax_type',
+    'global_tax_value',
+    'global_discount_type',
+    'global_discount_value',
+    'tax_total',
+    'discount_total',
+    'grand_total',
+    'notes'
+];
 
-    public function paginate(int $page = 1, int $perPage = 15): array
-    {
-        $offset = ($page - 1) * $perPage;
-        
-        // Get total count
-        $countSql = "SELECT COUNT(*) as total FROM {$this->table}";
-        $countStmt = DB::query($countSql);
-        $total = $countStmt->fetch()['total'];
-        
-        // Get paginated results with client names
-        $sql = "SELECT q.*, 
-                       c.name as client_name, 
-                       c.type as client_type,
-                       c.email as client_email,
-                       c.phone as client_phone,
-                       c.address as client_address
-                FROM {$this->table} q
-                LEFT JOIN sp_clients c ON q.client_id = c.id
-                ORDER BY q.created_at DESC 
-                LIMIT ? OFFSET ?";
-        $stmt = DB::query($sql, [$perPage, $offset]);
-        $data = $stmt->fetchAll();
-        
-        return [
-            'data' => $data,
-            'total' => $total,
-            'per_page' => $perPage,
-            'current_page' => $page,
-            'last_page' => (int) ceil($total / $perPage),
-            'from' => $offset + 1,
-            'to' => min($offset + $perPage, $total)
-        ];
-    }
+public function paginate(int $page = 1, int $perPage = 15): array
+{
+    $offset = ($page - 1) * $perPage;
+    
+    // Get total count
+    $countSql = "SELECT COUNT(*) as total FROM {$this->table}";
+    $countStmt = DB::query($countSql);
+    $total = $countStmt->fetch()['total'];
+    
+    // Get paginated results with client names and currency
+    $sql = "SELECT q.*, 
+                   c.name as client_name, 
+                   c.type as client_type,
+                   c.email as client_email,
+                   c.phone as client_phone,
+                   c.address as client_address,
+                   cur.symbol as currency_symbol     -- NEW: Include currency symbol
+            FROM {$this->table} q
+            LEFT JOIN sp_clients c ON q.client_id = c.id
+            LEFT JOIN sp_currencies cur ON q.currency_code = cur.code    -- NEW: Join with currencies
+            ORDER BY q.created_at DESC 
+            LIMIT ? OFFSET ?";
+    $stmt = DB::query($sql, [$perPage, $offset]);
+    $data = $stmt->fetchAll();
+    
+    return [
+        'data' => $data,
+        'total' => $total,
+        'per_page' => $perPage,
+        'current_page' => $page,
+        'last_page' => (int) ceil($total / $perPage),
+        'from' => $offset + 1,
+        'to' => min($offset + $perPage, $total)
+    ];
+}
 
     public function search(string $query, int $page = 1, int $perPage = 15): array
     {
@@ -93,17 +97,24 @@ class Quote extends Model
         ];
     }
 
-    public function getWithClient(int $quoteId): ?array
-    {
-        $sql = "SELECT q.*, c.name as client_name, c.type as client_type, c.email as client_email,
-                       c.phone as client_phone, c.address as client_address
-                FROM {$this->table} q
-                LEFT JOIN sp_clients c ON q.client_id = c.id
-                WHERE q.id = ?";
-        $stmt = DB::query($sql, [$quoteId]);
-        $result = $stmt->fetch();
-        return $result ?: null;
-    }
+public function getWithClient(int $quoteId): ?array
+{
+    $sql = "SELECT q.*, 
+                   c.name as client_name, 
+                   c.type as client_type, 
+                   c.email as client_email,
+                   c.phone as client_phone, 
+                   c.address as client_address,
+                   cur.symbol as currency_symbol,         -- NEW
+                   cur.name as currency_name              -- NEW
+            FROM {$this->table} q
+            LEFT JOIN sp_clients c ON q.client_id = c.id
+            LEFT JOIN sp_currencies cur ON q.currency_code = cur.code    -- NEW
+            WHERE q.id = ?";
+    $stmt = DB::query($sql, [$quoteId]);
+    $result = $stmt->fetch();
+    return $result ?: null;
+}
 
     public function getItems(int $quoteId): array
     {
@@ -141,111 +152,117 @@ class Quote extends Model
         return $summary;
     }
 
-    public function createWithItems(array $data, array $items): int
-    {
-        DB::beginTransaction();
+public function createWithItems(array $data, array $items): int
+{
+    DB::beginTransaction();
+    
+    try {
+        // Calculate totals
+        $totals = $this->calculateTotals($data, $items);
         
-        try {
-            // Calculate totals
-            $totals = $this->calculateTotals($data, $items);
-            
-            // Merge calculated totals with quote data
-            $quoteData = array_merge($data, $totals);
-            
-            // Create quote
-            $quoteId = $this->create($quoteData);
-            
-            // Create quote items
-            foreach ($items as $item) {
-                $item['quote_id'] = $quoteId;
-                DB::query(
-                    "INSERT INTO sp_quote_items (quote_id, product_id, qty, price, tax, tax_type, discount, discount_type) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    [
-                        $item['quote_id'],
-                        $item['product_id'],
-                        $item['qty'],
-                        $item['price'],
-                        $item['tax'],
-                        $item['tax_type'],
-                        $item['discount'],
-                        $item['discount_type']
-                    ]
-                );
-            }
-            
-            // Reserve stock for approved quotes
-            if ($data['status'] === 'approved') {
-                $this->reserveStock($quoteId, $items);
-            }
-            
-            DB::commit();
-            return $quoteId;
-            
-        } catch (\Exception $e) {
-            DB::rollback();
-            throw $e;
+        // Merge calculated totals with quote data
+        $quoteData = array_merge($data, $totals);
+        
+        // Create quote
+        $quoteId = $this->create($quoteData);
+        
+        // Create quote items with currency support
+        foreach ($items as $item) {
+            $item['quote_id'] = $quoteId;
+            DB::query(
+                "INSERT INTO sp_quote_items (quote_id, product_id, currency_code, qty, price, original_price, exchange_rate, tax, tax_type, discount, discount_type) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    $item['quote_id'],
+                    $item['product_id'],
+                    $item['currency_code'] ?? $data['currency_code'],           // NEW
+                    $item['qty'],
+                    $item['price'],
+                    $item['original_price'] ?? $item['price'],                   // NEW
+                    $item['exchange_rate'] ?? $data['exchange_rate'],            // NEW
+                    $item['tax'],
+                    $item['tax_type'],
+                    $item['discount'],
+                    $item['discount_type']
+                ]
+            );
         }
+        
+        // Reserve stock for approved quotes
+        if ($data['status'] === 'approved') {
+            $this->reserveStock($quoteId, $items);
+        }
+        
+        DB::commit();
+        return $quoteId;
+        
+    } catch (\Exception $e) {
+        DB::rollback();
+        throw $e;
     }
+}
 
-    public function updateWithItems(int $quoteId, array $data, array $items): bool
-    {
-        DB::beginTransaction();
+public function updateWithItems(int $quoteId, array $data, array $items): bool
+{
+    DB::beginTransaction();
+    
+    try {
+        // Get current quote for stock management
+        $currentQuote = $this->find($quoteId);
         
-        try {
-            // Get current quote for stock management
-            $currentQuote = $this->find($quoteId);
-            
-            // Calculate totals
-            $totals = $this->calculateTotals($data, $items);
-            
-            // Merge calculated totals with quote data
-            $quoteData = array_merge($data, $totals);
-            
-            // Update quote
-            $this->update($quoteId, $quoteData);
-            
-            // Delete existing items
-            DB::query("DELETE FROM sp_quote_items WHERE quote_id = ?", [$quoteId]);
-            
-            // Create new items
-            foreach ($items as $item) {
-                $item['quote_id'] = $quoteId;
-                DB::query(
-                    "INSERT INTO sp_quote_items (quote_id, product_id, qty, price, tax, tax_type, discount, discount_type) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                    [
-                        $item['quote_id'],
-                        $item['product_id'],
-                        $item['qty'],
-                        $item['price'],
-                        $item['tax'],
-                        $item['tax_type'],
-                        $item['discount'],
-                        $item['discount_type']
-                    ]
-                );
-            }
-            
-            // Handle stock reservations
-            if ($currentQuote['status'] === 'approved') {
-                // Release old reservations
-                $this->releaseStock($quoteId);
-            }
-            
-            if ($data['status'] === 'approved') {
-                // Reserve new stock
-                $this->reserveStock($quoteId, $items);
-            }
-            
-            DB::commit();
-            return true;
-            
-        } catch (\Exception $e) {
-            DB::rollback();
-            throw $e;
+        // Calculate totals
+        $totals = $this->calculateTotals($data, $items);
+        
+        // Merge calculated totals with quote data
+        $quoteData = array_merge($data, $totals);
+        
+        // Update quote
+        $this->update($quoteId, $quoteData);
+        
+        // Delete existing items
+        DB::query("DELETE FROM sp_quote_items WHERE quote_id = ?", [$quoteId]);
+        
+        // Create new items with currency support
+        foreach ($items as $item) {
+            $item['quote_id'] = $quoteId;
+            DB::query(
+                "INSERT INTO sp_quote_items (quote_id, product_id, currency_code, qty, price, original_price, exchange_rate, tax, tax_type, discount, discount_type) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    $item['quote_id'],
+                    $item['product_id'],
+                    $item['currency_code'] ?? $data['currency_code'],           // NEW
+                    $item['qty'],
+                    $item['price'],
+                    $item['original_price'] ?? $item['price'],                   // NEW
+                    $item['exchange_rate'] ?? $data['exchange_rate'],            // NEW
+                    $item['tax'],
+                    $item['tax_type'],
+                    $item['discount'],
+                    $item['discount_type']
+                ]
+            );
         }
+        
+        // Handle stock reservations
+        if ($currentQuote['status'] === 'approved') {
+            // Release old reservations
+            $this->releaseStock($quoteId);
+        }
+        
+        if ($data['status'] === 'approved') {
+            // Reserve new stock
+            $this->reserveStock($quoteId, $items);
+        }
+        
+        DB::commit();
+        return true;
+        
+    } catch (\Exception $e) {
+        DB::rollback();
+        throw $e;
     }
+}
 
     public function approve(int $quoteId): bool
     {
