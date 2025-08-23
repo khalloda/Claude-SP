@@ -101,6 +101,16 @@ $router->group(['auth' => true], function(Router $r) {
     // Payments
     $r->get('/payments', 'PaymentController@index');
     $r->get('/payments/{id}', 'PaymentController@show');
+	
+	// Currency Management (Admin)
+    $r->resource('/currencies', 'CurrencyController');
+    $r->post('/currencies/{code}/set-primary', 'CurrencyController@setPrimary');
+    $r->post('/currencies/update-rates', 'CurrencyController@updateRates');
+    
+    // Currency AJAX endpoints - Add these BEFORE the closing });
+    $r->post('/currencies/set-user-currency', 'CurrencyController@setUserCurrency');
+    $r->get('/currencies/exchange-rate', 'CurrencyController@getExchangeRate');
+    $r->post('/currencies/convert', 'CurrencyController@convert');
 });
 
 // Handle the request
