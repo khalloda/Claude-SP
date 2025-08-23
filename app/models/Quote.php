@@ -26,6 +26,40 @@ class Quote extends Model
         'notes'
     ];
 
+    public function paginate(int $page = 1, int $perPage = 15): array
+    {
+        $offset = ($page - 1) * $perPage;
+        
+        // Get total count
+        $countSql = "SELECT COUNT(*) as total FROM {$this->table}";
+        $countStmt = DB::query($countSql);
+        $total = $countStmt->fetch()['total'];
+        
+        // Get paginated results with client names
+        $sql = "SELECT q.*, 
+                       c.name as client_name, 
+                       c.type as client_type,
+                       c.email as client_email,
+                       c.phone as client_phone,
+                       c.address as client_address
+                FROM {$this->table} q
+                LEFT JOIN sp_clients c ON q.client_id = c.id
+                ORDER BY q.created_at DESC 
+                LIMIT ? OFFSET ?";
+        $stmt = DB::query($sql, [$perPage, $offset]);
+        $data = $stmt->fetchAll();
+        
+        return [
+            'data' => $data,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => (int) ceil($total / $perPage),
+            'from' => $offset + 1,
+            'to' => min($offset + $perPage, $total)
+        ];
+    }
+
     public function search(string $query, int $page = 1, int $perPage = 15): array
     {
         $offset = ($page - 1) * $perPage;
@@ -83,281 +117,271 @@ class Quote extends Model
         return $stmt->fetchAll();
     }
 
-    public function updateStatus(int $quoteId, string $status): bool
+    public function getStatusSummary(): array
     {
-        $validStatuses = ['sent', 'approved', 'rejected'];
-        if (!in_array($status, $validStatuses)) {
-            return false;
-        }
+        $sql = "SELECT status, COUNT(*) as count, COALESCE(SUM(grand_total), 0) as total_value
+                FROM {$this->table} 
+                GROUP BY status";
+        $stmt = DB::query($sql);
+        $results = $stmt->fetchAll();
         
-        $oldQuote = $this->find($quoteId);
-        if (!$oldQuote) {
-            return false;
-        }
+        $summary = [
+            'sent' => ['count' => 0, 'total_value' => 0],
+            'approved' => ['count' => 0, 'total_value' => 0], 
+            'rejected' => ['count' => 0, 'total_value' => 0]
+        ];
         
-        // If rejecting quote, release stock reservations
-        if ($status === 'rejected' && $oldQuote['status'] !== 'rejected') {
-            $this->reserveStock($quoteId, false);
-        }
-        
-        // If approving quote, reserve stock
-        if ($status === 'approved' && $oldQuote['status'] !== 'approved') {
-            $this->reserveStock($quoteId, true);
-        }
-        
-        return $this->update($quoteId, ['status' => $status]);
-    }
-
-    private function reserveStock(int $quoteId, bool $reserve): void
-    {
-        $items = $this->getItems($quoteId);
-        $operation = $reserve ? '+' : '-';
-        
-        foreach ($items as $item) {
-            $sql = "UPDATE sp_products SET reserved_quotes = reserved_quotes {$operation} ? WHERE id = ?";
-            DB::query($sql, [$item['qty'], $item['product_id']]);
-        }
-    }
-
-    public function convertToSalesOrder(int $quoteId): int
-    {
-        $quote = $this->getWithClient($quoteId);
-        $items = $this->getItems($quoteId);
-        
-        if (!$quote || $quote['status'] !== 'approved') {
-            throw new \Exception('Quote must be approved before converting to sales order');
-        }
-        
-        DB::beginTransaction();
-        
-        try {
-            // Create sales order
-            $salesOrderData = [
-                'client_id' => $quote['client_id'],
-                'quote_id' => $quoteId,
-                'status' => 'open',
-                'items_subtotal' => $quote['items_subtotal'],
-                'items_tax_total' => $quote['items_tax_total'],
-                'items_discount_total' => $quote['items_discount_total'],
-                'global_tax_type' => $quote['global_tax_type'],
-                'global_tax_value' => $quote['global_tax_value'],
-                'global_discount_type' => $quote['global_discount_type'],
-                'global_discount_value' => $quote['global_discount_value'],
-                'tax_total' => $quote['tax_total'],
-                'discount_total' => $quote['discount_total'],
-                'grand_total' => $quote['grand_total'],
-                'notes' => $quote['notes']
+        foreach ($results as $result) {
+            $summary[$result['status']] = [
+                'count' => (int) $result['count'],
+                'total_value' => (float) $result['total_value']
             ];
-            
-            $salesOrderModel = new SalesOrder();
-            $salesOrderId = $salesOrderModel->create($salesOrderData);
-            
-            // Create sales order items
-            foreach ($items as $item) {
-                $salesOrderItemData = [
-                    'sales_order_id' => $salesOrderId,
-                    'product_id' => $item['product_id'],
-                    'qty' => $item['qty'],
-                    'price' => $item['price'],
-                    'tax' => $item['tax'],
-                    'tax_type' => $item['tax_type'],
-                    'discount' => $item['discount'],
-                    'discount_type' => $item['discount_type']
-                ];
-                
-                $sql = "INSERT INTO sp_sales_order_items (sales_order_id, product_id, qty, price, tax, tax_type, discount, discount_type)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-                DB::query($sql, array_values($salesOrderItemData));
-            }
-            
-            // Transfer stock reservations from quotes to orders
-            $this->transferStockReservations($quoteId, $salesOrderId);
-            
-            DB::commit();
-            return $salesOrderId;
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            throw $e;
         }
-    }
-
-    private function transferStockReservations(int $quoteId, int $salesOrderId): void
-    {
-        $items = $this->getItems($quoteId);
         
-        foreach ($items as $item) {
-            // Release from quote reservations and add to order reservations
-            $sql = "UPDATE sp_products 
-                    SET reserved_quotes = reserved_quotes - ?,
-                        reserved_orders = reserved_orders + ?
-                    WHERE id = ?";
-            DB::query($sql, [$item['qty'], $item['qty'], $item['product_id']]);
-        }
+        return $summary;
     }
 
-    // MISSING METHODS IMPLEMENTATION:
-
-    public function createWithItems(array $quoteData, array $items): int
+    public function createWithItems(array $data, array $items): int
     {
         DB::beginTransaction();
         
         try {
             // Calculate totals
-            $totals = $this->calculateQuoteTotals($items, $quoteData);
+            $totals = $this->calculateTotals($data, $items);
             
             // Merge calculated totals with quote data
-            $quoteData = array_merge($quoteData, $totals);
+            $quoteData = array_merge($data, $totals);
             
-            // Create the quote
+            // Create quote
             $quoteId = $this->create($quoteData);
             
             // Create quote items
             foreach ($items as $item) {
-                $itemData = [
-                    'quote_id' => $quoteId,
-                    'product_id' => $item['product_id'],
-                    'qty' => $item['qty'],
-                    'price' => $item['price'],
-                    'tax' => $item['tax'] ?? 0,
-                    'tax_type' => $item['tax_type'] ?? 'percent',
-                    'discount' => $item['discount'] ?? 0,
-                    'discount_type' => $item['discount_type'] ?? 'percent'
-                ];
-                
-                $sql = "INSERT INTO sp_quote_items (quote_id, product_id, qty, price, tax, tax_type, discount, discount_type)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-                DB::query($sql, array_values($itemData));
+                $item['quote_id'] = $quoteId;
+                DB::query(
+                    "INSERT INTO sp_quote_items (quote_id, product_id, qty, price, tax, tax_type, discount, discount_type) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        $item['quote_id'],
+                        $item['product_id'],
+                        $item['qty'],
+                        $item['price'],
+                        $item['tax'],
+                        $item['tax_type'],
+                        $item['discount'],
+                        $item['discount_type']
+                    ]
+                );
+            }
+            
+            // Reserve stock for approved quotes
+            if ($data['status'] === 'approved') {
+                $this->reserveStock($quoteId, $items);
             }
             
             DB::commit();
             return $quoteId;
             
         } catch (\Exception $e) {
-            DB::rollBack();
+            DB::rollback();
             throw $e;
         }
     }
 
-    public function updateWithItems(int $quoteId, array $quoteData, array $items): bool
+    public function updateWithItems(int $quoteId, array $data, array $items): bool
     {
-        $quote = $this->find($quoteId);
-        if (!$quote) {
-            throw new \Exception('Quote not found');
-        }
-        
-        // Prevent updating approved quotes
-        if ($quote['status'] === 'approved') {
-            throw new \Exception('Cannot update approved quote');
-        }
-
         DB::beginTransaction();
         
         try {
-            // Release any existing stock reservations if quote was approved
-            if ($quote['status'] === 'approved') {
-                $this->reserveStock($quoteId, false);
-            }
+            // Get current quote for stock management
+            $currentQuote = $this->find($quoteId);
             
             // Calculate totals
-            $totals = $this->calculateQuoteTotals($items, $quoteData);
+            $totals = $this->calculateTotals($data, $items);
             
             // Merge calculated totals with quote data
-            $quoteData = array_merge($quoteData, $totals);
+            $quoteData = array_merge($data, $totals);
             
-            // Update the quote
+            // Update quote
             $this->update($quoteId, $quoteData);
             
             // Delete existing items
-            $deleteItemsSql = "DELETE FROM sp_quote_items WHERE quote_id = ?";
-            DB::query($deleteItemsSql, [$quoteId]);
+            DB::query("DELETE FROM sp_quote_items WHERE quote_id = ?", [$quoteId]);
             
-            // Create new quote items
+            // Create new items
             foreach ($items as $item) {
-                $itemData = [
-                    'quote_id' => $quoteId,
-                    'product_id' => $item['product_id'],
-                    'qty' => $item['qty'],
-                    'price' => $item['price'],
-                    'tax' => $item['tax'] ?? 0,
-                    'tax_type' => $item['tax_type'] ?? 'percent',
-                    'discount' => $item['discount'] ?? 0,
-                    'discount_type' => $item['discount_type'] ?? 'percent'
-                ];
-                
-                $sql = "INSERT INTO sp_quote_items (quote_id, product_id, qty, price, tax, tax_type, discount, discount_type)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-                DB::query($sql, array_values($itemData));
+                $item['quote_id'] = $quoteId;
+                DB::query(
+                    "INSERT INTO sp_quote_items (quote_id, product_id, qty, price, tax, tax_type, discount, discount_type) 
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [
+                        $item['quote_id'],
+                        $item['product_id'],
+                        $item['qty'],
+                        $item['price'],
+                        $item['tax'],
+                        $item['tax_type'],
+                        $item['discount'],
+                        $item['discount_type']
+                    ]
+                );
+            }
+            
+            // Handle stock reservations
+            if ($currentQuote['status'] === 'approved') {
+                // Release old reservations
+                $this->releaseStock($quoteId);
+            }
+            
+            if ($data['status'] === 'approved') {
+                // Reserve new stock
+                $this->reserveStock($quoteId, $items);
             }
             
             DB::commit();
             return true;
             
         } catch (\Exception $e) {
-            DB::rollBack();
+            DB::rollback();
             throw $e;
         }
     }
 
-    private function calculateQuoteTotals(array $items, array $quoteData): array
+    public function approve(int $quoteId): bool
     {
-        $itemsSubtotal = 0;
-        $itemsTaxTotal = 0;
-        $itemsDiscountTotal = 0;
+        DB::beginTransaction();
         
-        // Calculate item-level totals
-        foreach ($items as $item) {
-            $qty = (float) $item['qty'];
-            $price = (float) $item['price'];
-            $tax = (float) ($item['tax'] ?? 0);
-            $taxType = $item['tax_type'] ?? 'percent';
-            $discount = (float) ($item['discount'] ?? 0);
-            $discountType = $item['discount_type'] ?? 'percent';
+        try {
+            // Update status
+            $this->update($quoteId, ['status' => 'approved']);
             
-            $lineSubtotal = $qty * $price;
-            $itemsSubtotal += $lineSubtotal;
+            // Reserve stock for all items
+            $items = $this->getItems($quoteId);
+            $this->reserveStock($quoteId, $items);
             
-            // Calculate line tax
-            if ($tax > 0) {
-                $lineTax = $taxType === 'percent' ? ($lineSubtotal * $tax / 100) : $tax;
-                $itemsTaxTotal += $lineTax;
+            DB::commit();
+            return true;
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            throw $e;
+        }
+    }
+
+    public function reject(int $quoteId): bool
+    {
+        DB::beginTransaction();
+        
+        try {
+            // Get current quote
+            $quote = $this->find($quoteId);
+            
+            // Release stock if it was approved
+            if ($quote['status'] === 'approved') {
+                $this->releaseStock($quoteId);
             }
             
-            // Calculate line discount
-            if ($discount > 0) {
-                $lineDiscount = $discountType === 'percent' ? ($lineSubtotal * $discount / 100) : $discount;
-                $itemsDiscountTotal += $lineDiscount;
+            // Update status
+            $this->update($quoteId, ['status' => 'rejected']);
+            
+            DB::commit();
+            return true;
+            
+        } catch (\Exception $e) {
+            DB::rollback();
+            throw $e;
+        }
+    }
+
+    private function calculateTotals(array $data, array $items): array
+    {
+        $itemsSubtotal = 0;
+        $itemsTax = 0;
+        $itemsDiscount = 0;
+        
+        foreach ($items as $item) {
+            $lineSubtotal = $item['qty'] * $item['price'];
+            $itemsSubtotal += $lineSubtotal;
+            
+            // Calculate tax
+            if ($item['tax_type'] === 'percent') {
+                $itemsTax += $lineSubtotal * ($item['tax'] / 100);
+            } else {
+                $itemsTax += $item['tax'];
+            }
+            
+            // Calculate discount  
+            if ($item['discount_type'] === 'percent') {
+                $itemsDiscount += $lineSubtotal * ($item['discount'] / 100);
+            } else {
+                $itemsDiscount += $item['discount'];
             }
         }
         
         // Calculate global tax and discount
-        $globalTaxType = $quoteData['global_tax_type'] ?? 'percent';
-        $globalTaxValue = (float) ($quoteData['global_tax_value'] ?? 0);
-        $globalDiscountType = $quoteData['global_discount_type'] ?? 'percent';
-        $globalDiscountValue = (float) ($quoteData['global_discount_value'] ?? 0);
+        $globalTaxValue = $data['global_tax_value'] ?? 0;
+        $globalTaxType = $data['global_tax_type'] ?? 'percent';
+        $globalDiscountValue = $data['global_discount_value'] ?? 0;
+        $globalDiscountType = $data['global_discount_type'] ?? 'percent';
         
-        $globalTax = 0;
-        $globalDiscount = 0;
+        $baseForGlobal = $itemsSubtotal + $itemsTax - $itemsDiscount;
         
-        if ($globalTaxValue > 0) {
-            $globalTax = $globalTaxType === 'percent' ? ($itemsSubtotal * $globalTaxValue / 100) : $globalTaxValue;
-        }
+        $globalTax = $globalTaxType === 'percent' ? 
+            ($baseForGlobal * $globalTaxValue / 100) : $globalTaxValue;
+            
+        $baseForDiscount = $baseForGlobal + $globalTax;
+        $globalDiscount = $globalDiscountType === 'percent' ? 
+            ($baseForDiscount * $globalDiscountValue / 100) : $globalDiscountValue;
         
-        if ($globalDiscountValue > 0) {
-            $globalDiscount = $globalDiscountType === 'percent' ? ($itemsSubtotal * $globalDiscountValue / 100) : $globalDiscountValue;
-        }
-        
-        $totalTax = $itemsTaxTotal + $globalTax;
-        $totalDiscount = $itemsDiscountTotal + $globalDiscount;
+        $totalTax = $itemsTax + $globalTax;
+        $totalDiscount = $itemsDiscount + $globalDiscount;
         $grandTotal = $itemsSubtotal + $totalTax - $totalDiscount;
         
         return [
-            'items_subtotal' => $itemsSubtotal,
-            'items_tax_total' => $itemsTaxTotal,
-            'items_discount_total' => $itemsDiscountTotal,
-            'tax_total' => $totalTax,
-            'discount_total' => $totalDiscount,
-            'grand_total' => max(0, $grandTotal) // Ensure non-negative total
+            'items_subtotal' => round($itemsSubtotal, 2),
+            'items_tax_total' => round($itemsTax, 2),
+            'items_discount_total' => round($itemsDiscount, 2),
+            'tax_total' => round($totalTax, 2),
+            'discount_total' => round($totalDiscount, 2),
+            'grand_total' => round(max(0, $grandTotal), 2)
         ];
+    }
+
+    private function reserveStock(int $quoteId, array $items): void
+    {
+        foreach ($items as $item) {
+            // Update product reserved quantities
+            DB::query(
+                "UPDATE sp_products SET reserved_quotes = reserved_quotes + ? WHERE id = ?",
+                [$item['qty'], $item['product_id']]
+            );
+            
+            // Log stock movement
+            DB::query(
+                "INSERT INTO sp_stock_movements (product_id, direction, qty, reason, ref_table, ref_id) 
+                 VALUES (?, 'out', ?, 'Reserved for quote', 'sp_quotes', ?)",
+                [$item['product_id'], $item['qty'], $quoteId]
+            );
+        }
+    }
+
+    private function releaseStock(int $quoteId): void
+    {
+        $items = $this->getItems($quoteId);
+        
+        foreach ($items as $item) {
+            // Update product reserved quantities
+            DB::query(
+                "UPDATE sp_products SET reserved_quotes = GREATEST(0, reserved_quotes - ?) WHERE id = ?",
+                [$item['qty'], $item['product_id']]
+            );
+            
+            // Log stock movement
+            DB::query(
+                "INSERT INTO sp_stock_movements (product_id, direction, qty, reason, ref_table, ref_id) 
+                 VALUES (?, 'in', ?, 'Released from quote', 'sp_quotes', ?)",
+                [$item['product_id'], $item['qty'], $quoteId]
+            );
+        }
     }
 }
