@@ -41,8 +41,12 @@ class Invoice extends Model
         $total = $countStmt->fetch()['total'];
         
         // Get paginated results with client names
-        $sql = "SELECT i.*, c.name as client_name, c.type as client_type,
-                       (i.grand_total - i.paid_total) as balance
+        $sql = "SELECT i.*, 
+                       c.name as client_name, 
+                       c.type as client_type,
+                       c.email as client_email,
+                       c.phone as client_phone,
+                       c.address as client_address
                 FROM {$this->table} i
                 LEFT JOIN sp_clients c ON i.client_id = c.id
                 WHERE c.name LIKE ? OR i.notes LIKE ? OR i.id LIKE ?
@@ -62,12 +66,48 @@ class Invoice extends Model
         ];
     }
 
+    public function paginate(int $page = 1, int $perPage = 15): array
+    {
+        $offset = ($page - 1) * $perPage;
+        
+        // Get total count
+        $countSql = "SELECT COUNT(*) as total FROM {$this->table}";
+        $countStmt = DB::query($countSql);
+        $total = $countStmt->fetch()['total'];
+        
+        // Get paginated results with client names
+        $sql = "SELECT i.*, 
+                       c.name as client_name, 
+                       c.type as client_type,
+                       c.email as client_email,
+                       c.phone as client_phone,
+                       c.address as client_address
+                FROM {$this->table} i
+                LEFT JOIN sp_clients c ON i.client_id = c.id
+                ORDER BY i.created_at DESC 
+                LIMIT ? OFFSET ?";
+        $stmt = DB::query($sql, [$perPage, $offset]);
+        $data = $stmt->fetchAll();
+        
+        return [
+            'data' => $data,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => (int) ceil($total / $perPage),
+            'from' => $offset + 1,
+            'to' => min($offset + $perPage, $total)
+        ];
+    }
+
     public function getWithClient(int $invoiceId): ?array
     {
         $sql = "SELECT i.*, c.name as client_name, c.type as client_type, c.email as client_email,
-                       c.phone as client_phone, c.address as client_address
+                       c.phone as client_phone, c.address as client_address,
+                       so.id as sales_order_id
                 FROM {$this->table} i
                 LEFT JOIN sp_clients c ON i.client_id = c.id
+                LEFT JOIN sp_sales_orders so ON i.sales_order_id = so.id
                 WHERE i.id = ?";
         $stmt = DB::query($sql, [$invoiceId]);
         $result = $stmt->fetch();
@@ -185,36 +225,62 @@ class Invoice extends Model
         }
     }
 
-    public function getBalance(int $invoiceId): float
+    public function getBalance(int $invoiceId): array
     {
-        $invoice = $this->find($invoiceId);
-        if (!$invoice) {
-            return 0.0;
-        }
-
-        return (float) ($invoice['grand_total'] - $invoice['paid_total']);
+        $sql = "SELECT 
+                    grand_total,
+                    paid_total,
+                    (grand_total - paid_total) as balance,
+                    CASE 
+                        WHEN paid_total = 0 THEN 'unpaid'
+                        WHEN paid_total >= grand_total THEN 'paid'
+                        ELSE 'partial'
+                    END as payment_status
+                FROM {$this->table}
+                WHERE id = ?";
+        
+        $stmt = DB::query($sql, [$invoiceId]);
+        $result = $stmt->fetch();
+        
+        return $result ?: [
+            'grand_total' => 0,
+            'paid_total' => 0,
+            'balance' => 0,
+            'payment_status' => 'unknown'
+        ];
     }
-
-    // NEW MISSING METHODS BELOW:
 
     public function getTotalsByStatus(): array
     {
-        $sql = "SELECT status, COUNT(*) as count, SUM(grand_total) as total_amount, 
-                       SUM(paid_total) as paid_amount, SUM(grand_total - paid_total) as balance_amount
+        $sql = "SELECT 
+                    status,
+                    COUNT(*) as count,
+                    SUM(grand_total) as total,
+                    SUM(paid_total) as paid,
+                    SUM(grand_total - paid_total) as balance
                 FROM {$this->table} 
-                WHERE status != 'void'
                 GROUP BY status";
+        
         $stmt = DB::query($sql);
         $results = $stmt->fetchAll();
         
-        $summary = [];
-        foreach ($results as $row) {
-            $summary[$row['status']] = [
-                'count' => (int) $row['count'],
-                'total_amount' => (float) $row['total_amount'],
-                'paid_amount' => (float) $row['paid_amount'],
-                'balance_amount' => (float) $row['balance_amount']
-            ];
+        $summary = [
+            'open' => ['count' => 0, 'total' => 0, 'paid' => 0, 'balance' => 0],
+            'partial' => ['count' => 0, 'total' => 0, 'paid' => 0, 'balance' => 0],
+            'paid' => ['count' => 0, 'total' => 0, 'paid' => 0, 'balance' => 0],
+            'void' => ['count' => 0, 'total' => 0, 'paid' => 0, 'balance' => 0]
+        ];
+        
+        foreach ($results as $result) {
+            $status = $result['status'];
+            if (isset($summary[$status])) {
+                $summary[$status] = [
+                    'count' => (int) $result['count'],
+                    'total' => (float) $result['total'],
+                    'paid' => (float) $result['paid'],
+                    'balance' => (float) $result['balance']
+                ];
+            }
         }
         
         return $summary;
@@ -222,12 +288,18 @@ class Invoice extends Model
 
     public function getInvoicesByStatus(string $status): array
     {
-        $sql = "SELECT i.*, c.name as client_name, c.type as client_type,
+        $sql = "SELECT i.*, 
+                       c.name as client_name, 
+                       c.type as client_type,
+                       c.email as client_email,
+                       c.phone as client_phone,
+                       c.address as client_address,
                        (i.grand_total - i.paid_total) as balance
                 FROM {$this->table} i
                 LEFT JOIN sp_clients c ON i.client_id = c.id
                 WHERE i.status = ?
                 ORDER BY i.created_at DESC";
+        
         $stmt = DB::query($sql, [$status]);
         return $stmt->fetchAll();
     }
@@ -242,6 +314,10 @@ class Invoice extends Model
             
             // Merge calculated totals with invoice data
             $invoiceData = array_merge($invoiceData, $totals);
+            
+            // Set initial paid total and status
+            $invoiceData['paid_total'] = 0;
+            $invoiceData['status'] = 'open';
             
             // Create the invoice
             $invoiceId = $this->create($invoiceData);
@@ -280,8 +356,8 @@ class Invoice extends Model
             throw new \Exception('Invoice not found');
         }
         
-        // Prevent updating invoices with payments
-        if ($invoice['paid_total'] > 0) {
+        // Prevent updating paid or partially paid invoices
+        if (in_array($invoice['status'], ['paid', 'partial'])) {
             throw new \Exception('Cannot update invoice with payments');
         }
 
@@ -360,81 +436,33 @@ class Invoice extends Model
         }
         
         // Calculate global tax and discount
-        $subtotalAfterItemAdjustments = $itemsSubtotal + $itemsTaxTotal - $itemsDiscountTotal;
-        
-        $globalTaxValue = (float) ($invoiceData['global_tax_value'] ?? 0);
         $globalTaxType = $invoiceData['global_tax_type'] ?? 'percent';
-        $globalTax = 0;
-        if ($globalTaxValue > 0) {
-            $globalTax = $globalTaxType === 'percent' ? 
-                ($subtotalAfterItemAdjustments * $globalTaxValue / 100) : $globalTaxValue;
-        }
-        
-        $globalDiscountValue = (float) ($invoiceData['global_discount_value'] ?? 0);
+        $globalTaxValue = (float) ($invoiceData['global_tax_value'] ?? 0);
         $globalDiscountType = $invoiceData['global_discount_type'] ?? 'percent';
+        $globalDiscountValue = (float) ($invoiceData['global_discount_value'] ?? 0);
+        
+        $globalTax = 0;
         $globalDiscount = 0;
-        if ($globalDiscountValue > 0) {
-            $baseForDiscount = $subtotalAfterItemAdjustments + $globalTax;
-            $globalDiscount = $globalDiscountType === 'percent' ? 
-                ($baseForDiscount * $globalDiscountValue / 100) : $globalDiscountValue;
+        
+        if ($globalTaxValue > 0) {
+            $globalTax = $globalTaxType === 'percent' ? ($itemsSubtotal * $globalTaxValue / 100) : $globalTaxValue;
         }
         
-        $grandTotal = $subtotalAfterItemAdjustments + $globalTax - $globalDiscount;
+        if ($globalDiscountValue > 0) {
+            $globalDiscount = $globalDiscountType === 'percent' ? ($itemsSubtotal * $globalDiscountValue / 100) : $globalDiscountValue;
+        }
+        
+        $totalTax = $itemsTaxTotal + $globalTax;
+        $totalDiscount = $itemsDiscountTotal + $globalDiscount;
+        $grandTotal = $itemsSubtotal + $totalTax - $totalDiscount;
         
         return [
             'items_subtotal' => $itemsSubtotal,
             'items_tax_total' => $itemsTaxTotal,
             'items_discount_total' => $itemsDiscountTotal,
-            'tax_total' => $globalTax,
-            'discount_total' => $globalDiscount,
-            'grand_total' => $grandTotal
+            'tax_total' => $totalTax,
+            'discount_total' => $totalDiscount,
+            'grand_total' => max(0, $grandTotal) // Ensure non-negative total
         ];
-    }
-
-    public function getOpenInvoices(): array
-    {
-        $sql = "SELECT i.*, c.name as client_name,
-                       (i.grand_total - i.paid_total) as balance
-                FROM {$this->table} i
-                LEFT JOIN sp_clients c ON i.client_id = c.id
-                WHERE i.status IN ('open', 'partial')
-                ORDER BY i.created_at DESC";
-        $stmt = DB::query($sql);
-        return $stmt->fetchAll();
-    }
-
-    public function getClientOpenInvoices(int $clientId): array
-    {
-        $sql = "SELECT i.*, (i.grand_total - i.paid_total) as balance
-                FROM {$this->table} i
-                WHERE i.client_id = ? AND i.status IN ('open', 'partial')
-                ORDER BY i.created_at DESC";
-        $stmt = DB::query($sql, [$clientId]);
-        return $stmt->fetchAll();
-    }
-
-    public function getOverdueInvoices(int $days = 30): array
-    {
-        $sql = "SELECT i.*, c.name as client_name, c.email as client_email,
-                       (i.grand_total - i.paid_total) as balance,
-                       DATEDIFF(NOW(), i.created_at) as days_overdue
-                FROM {$this->table} i
-                LEFT JOIN sp_clients c ON i.client_id = c.id
-                WHERE i.status IN ('open', 'partial') 
-                AND i.created_at <= DATE_SUB(NOW(), INTERVAL ? DAY)
-                ORDER BY i.created_at ASC";
-        $stmt = DB::query($sql, [$days]);
-        return $stmt->fetchAll();
-    }
-
-    public function getClientInvoices(int $clientId): array
-    {
-        $sql = "SELECT i.*, 
-                       (i.grand_total - i.paid_total) as balance
-                FROM {$this->table} i
-                WHERE i.client_id = ? AND i.status != 'void'
-                ORDER BY i.created_at DESC";
-        $stmt = DB::query($sql, [$clientId]);
-        return $stmt->fetchAll();
     }
 }
