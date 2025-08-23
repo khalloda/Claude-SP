@@ -1,4 +1,6 @@
 <?php
+// Create this file: app/models/Currency.php
+
 declare(strict_types=1);
 
 namespace App\Models;
@@ -14,10 +16,10 @@ class Currency extends Model
         'code',
         'name',
         'symbol',
-        'is_primary',
-        'is_active',
+        'decimal_places',
         'exchange_rate',
-        'decimal_places'
+        'is_active',
+        'is_primary'
     ];
 
     /**
@@ -25,8 +27,11 @@ class Currency extends Model
      */
     public function getActive(): array
     {
-        $sql = "SELECT * FROM {$this->table} WHERE is_active = 1 ORDER BY is_primary DESC, name ASC";
-        $stmt = DB::query($sql);
+        $stmt = DB::query("
+            SELECT * FROM {$this->table} 
+            WHERE is_active = 1 
+            ORDER BY is_primary DESC, code ASC
+        ");
         return $stmt->fetchAll();
     }
 
@@ -35,8 +40,7 @@ class Currency extends Model
      */
     public function getPrimary(): ?array
     {
-        $sql = "SELECT * FROM {$this->table} WHERE is_primary = 1 AND is_active = 1 LIMIT 1";
-        $stmt = DB::query($sql);
+        $stmt = DB::query("SELECT * FROM {$this->table} WHERE is_primary = 1 LIMIT 1");
         $result = $stmt->fetch();
         return $result ?: null;
     }
@@ -46,103 +50,109 @@ class Currency extends Model
      */
     public function getByCode(string $code): ?array
     {
-        $sql = "SELECT * FROM {$this->table} WHERE code = ? AND is_active = 1";
-        $stmt = DB::query($sql, [strtoupper($code)]);
+        $stmt = DB::query("SELECT * FROM {$this->table} WHERE code = ?", [strtoupper($code)]);
         $result = $stmt->fetch();
         return $result ?: null;
     }
 
     /**
-     * Get exchange rate between two currencies
+     * Check if currency code is valid and active
      */
-    public function getExchangeRate(string $from, string $to): float
+    public function isValidCurrency(string $code): bool
     {
-        // If same currency, return 1
-        if (strtoupper($from) === strtoupper($to)) {
-            return 1.0;
-        }
-
-        // Get both currencies
-        $fromCurrency = $this->getByCode($from);
-        $toCurrency = $this->getByCode($to);
-
-        if (!$fromCurrency || !$toCurrency) {
-            throw new \InvalidArgumentException("Invalid currency code: {$from} or {$to}");
-        }
-
-        // Calculate rate: from_rate / to_rate
-        // Since rates are stored relative to primary currency (EGP)
-        // To convert from A to B: amount * (rate_A / rate_B)
-        return (float) ($fromCurrency['exchange_rate'] / $toCurrency['exchange_rate']);
+        $stmt = DB::query("SELECT id FROM {$this->table} WHERE code = ? AND is_active = 1", [strtoupper($code)]);
+        return $stmt->fetch() !== false;
     }
 
     /**
-     * Convert amount between currencies
+     * Create new currency with validation
      */
-    public function convert(float $amount, string $from, string $to): float
+    public function createCurrency(array $data): int
     {
-        if ($amount <= 0) {
-            return 0.0;
+        // Validate currency code
+        $code = strtoupper($data['code']);
+        if (strlen($code) !== 3) {
+            throw new \InvalidArgumentException('Currency code must be exactly 3 characters');
         }
 
-        $rate = $this->getExchangeRate($from, $to);
-        return round($amount / $rate, 2);
+        // Check if code already exists
+        if ($this->getByCode($code)) {
+            throw new \InvalidArgumentException("Currency code {$code} already exists");
+        }
+
+        // Ensure only one primary currency
+        if (!empty($data['is_primary']) && $data['is_primary']) {
+            $this->clearPrimaryFlags();
+            $data['exchange_rate'] = 1.000000; // Primary currency always has rate of 1.0
+        }
+
+        $data['code'] = $code;
+        $currencyId = $this->create($data);
+
+        // Record in history
+        $this->recordExchangeRateHistory($code, null, $data['exchange_rate']);
+
+        return $currencyId;
     }
 
     /**
-     * Convert amount to primary currency
+     * Update currency
      */
-    public function convertToPrimary(float $amount, string $from): float
+    public function updateCurrency(string $code, array $data, ?int $userId = null): bool
     {
-        $primary = $this->getPrimary();
-        if (!$primary) {
-            throw new \RuntimeException('No primary currency configured');
-        }
-
-        return $this->convert($amount, $from, $primary['code']);
-    }
-
-    /**
-     * Convert amount from primary currency
-     */
-    public function convertFromPrimary(float $amount, string $to): float
-    {
-        $primary = $this->getPrimary();
-        if (!$primary) {
-            throw new \RuntimeException('No primary currency configured');
-        }
-
-        return $this->convert($amount, $primary['code'], $to);
-    }
-
-    /**
-     * Update exchange rate and log history
-     */
-    public function updateExchangeRate(string $code, float $newRate, ?int $userId = null): bool
-    {
-        DB::beginTransaction();
+        $code = strtoupper($code);
+        $currency = $this->getByCode($code);
         
+        if (!$currency) {
+            throw new \InvalidArgumentException("Currency {$code} not found");
+        }
+
+        // Handle primary currency logic
+        if (!empty($data['is_primary']) && $data['is_primary']) {
+            $this->clearPrimaryFlags();
+            $data['exchange_rate'] = 1.000000;
+        }
+
+        // Record exchange rate history if rate changed
+        if (isset($data['exchange_rate']) && (float)$data['exchange_rate'] !== (float)$currency['exchange_rate']) {
+            $this->recordExchangeRateHistory($code, $currency['exchange_rate'], $data['exchange_rate'], $userId);
+        }
+
+        return $this->update($currency['id'], $data);
+    }
+
+    /**
+     * Set currency as primary
+     */
+    public function setPrimary(string $code): bool
+    {
+        $code = strtoupper($code);
+        $currency = $this->getByCode($code);
+        
+        if (!$currency) {
+            throw new \InvalidArgumentException("Currency {$code} not found");
+        }
+
+        DB::beginTransaction();
+
         try {
-            // Get current rate for history
-            $currency = $this->getByCode($code);
-            if (!$currency) {
-                throw new \InvalidArgumentException("Currency {$code} not found");
-            }
+            // Clear all primary flags
+            $this->clearPrimaryFlags();
 
-            $previousRate = (float) $currency['exchange_rate'];
-
-            // Update the rate
-            $this->updateByCode($code, [
-                'exchange_rate' => $newRate,
-                'updated_at' => date('Y-m-d H:i:s')
+            // Set this currency as primary with rate 1.0
+            $this->update($currency['id'], [
+                'is_primary' => 1,
+                'is_active' => 1,
+                'exchange_rate' => 1.000000
             ]);
 
-            // Log to history
-            $this->logExchangeRateChange($code, $newRate, $previousRate, $userId);
+            // Record in history
+            if ((float)$currency['exchange_rate'] !== 1.000000) {
+                $this->recordExchangeRateHistory($code, $currency['exchange_rate'], 1.000000);
+            }
 
             DB::commit();
             return true;
-
         } catch (\Exception $e) {
             DB::rollback();
             throw $e;
@@ -150,17 +160,92 @@ class Currency extends Model
     }
 
     /**
-     * Get exchange rate history
+     * Update exchange rate
+     */
+    public function updateExchangeRate(string $code, float $newRate, ?int $userId = null): bool
+    {
+        $code = strtoupper($code);
+        $currency = $this->getByCode($code);
+        
+        if (!$currency) {
+            throw new \InvalidArgumentException("Currency {$code} not found");
+        }
+
+        if ($currency['is_primary']) {
+            throw new \InvalidArgumentException("Cannot change exchange rate of primary currency");
+        }
+
+        if ($newRate <= 0) {
+            throw new \InvalidArgumentException("Exchange rate must be greater than 0");
+        }
+
+        $oldRate = (float)$currency['exchange_rate'];
+        
+        if (abs($newRate - $oldRate) < 0.000001) {
+            return true; // No significant change
+        }
+
+        $success = $this->update($currency['id'], ['exchange_rate' => $newRate]);
+        
+        if ($success) {
+            $this->recordExchangeRateHistory($code, $oldRate, $newRate, $userId);
+        }
+
+        return $success;
+    }
+
+    /**
+     * Get exchange rate between two currencies
+     */
+    public function getExchangeRate(string $fromCode, string $toCode): float
+    {
+        $fromCode = strtoupper($fromCode);
+        $toCode = strtoupper($toCode);
+
+        if ($fromCode === $toCode) {
+            return 1.0;
+        }
+
+        $fromCurrency = $this->getByCode($fromCode);
+        $toCurrency = $this->getByCode($toCode);
+
+        if (!$fromCurrency || !$toCurrency) {
+            throw new \InvalidArgumentException("Invalid currency code");
+        }
+
+        // Convert through primary currency
+        // Rate = (amount in from currency * from_rate) / to_rate
+        return (float)$fromCurrency['exchange_rate'] / (float)$toCurrency['exchange_rate'];
+    }
+
+    /**
+     * Convert amount between currencies
+     */
+    public function convert(float $amount, string $fromCode, string $toCode): float
+    {
+        if ($amount <= 0) {
+            return 0.0;
+        }
+
+        $rate = $this->getExchangeRate($fromCode, $toCode);
+        return $amount * $rate;
+    }
+
+    /**
+     * Get exchange rate history for a currency
      */
     public function getExchangeRateHistory(string $code, int $limit = 50): array
     {
-        $sql = "SELECT h.*, u.username as changed_by_name
-                FROM sp_exchange_rate_history h
-                LEFT JOIN sp_users u ON h.changed_by = u.id
-                WHERE h.currency_code = ?
-                ORDER BY h.created_at DESC
-                LIMIT ?";
-        $stmt = DB::query($sql, [strtoupper($code), $limit]);
+        $query = "
+            SELECT ch.*, u.name as updated_by_name 
+            FROM sp_currency_history ch 
+            LEFT JOIN sp_users u ON u.id = ch.updated_by 
+            WHERE ch.currency_code = ? 
+            ORDER BY ch.created_at DESC 
+            LIMIT ?
+        ";
+        
+        $stmt = DB::query($query, [strtoupper($code), $limit]);
         return $stmt->fetchAll();
     }
 
@@ -169,189 +254,114 @@ class Currency extends Model
      */
     public function getCurrencyStats(): array
     {
-        $sql = "SELECT 
-                    c.code,
-                    c.name,
-                    c.symbol,
-                    c.is_primary,
-                    c.exchange_rate,
-                    COALESCE(quote_count.count, 0) as quotes_count,
-                    COALESCE(quote_total.total, 0) as quotes_total,
-                    COALESCE(invoice_count.count, 0) as invoices_count,
-                    COALESCE(invoice_total.total, 0) as invoices_total
-                FROM {$this->table} c
-                LEFT JOIN (
-                    SELECT currency_code, COUNT(*) as count 
-                    FROM sp_quotes 
-                    GROUP BY currency_code
-                ) quote_count ON c.code = quote_count.currency_code
-                LEFT JOIN (
-                    SELECT currency_code, SUM(grand_total) as total 
-                    FROM sp_quotes 
-                    GROUP BY currency_code
-                ) quote_total ON c.code = quote_total.currency_code
-                LEFT JOIN (
-                    SELECT currency_code, COUNT(*) as count 
-                    FROM sp_invoices 
-                    GROUP BY currency_code
-                ) invoice_count ON c.code = invoice_count.currency_code
-                LEFT JOIN (
-                    SELECT currency_code, SUM(grand_total) as total 
-                    FROM sp_invoices 
-                    GROUP BY currency_code
-                ) invoice_total ON c.code = invoice_total.currency_code
-                WHERE c.is_active = 1
-                ORDER BY c.is_primary DESC, c.name ASC";
-        
-        $stmt = DB::query($sql);
-        return $stmt->fetchAll();
-    }
+        $queries = [
+            'total' => "SELECT COUNT(*) as count FROM {$this->table}",
+            'active' => "SELECT COUNT(*) as count FROM {$this->table} WHERE is_active = 1",
+            'primary' => "SELECT code FROM {$this->table} WHERE is_primary = 1",
+            'last_updated' => "SELECT MAX(updated_at) as last_updated FROM {$this->table}"
+        ];
 
-    /**
-     * Validate currency code
-     */
-    public function isValidCurrency(string $code): bool
-    {
-        return $this->getByCode($code) !== null;
-    }
-
-    /**
-     * Get currency dropdown options
-     */
-    public function getDropdownOptions(): array
-    {
-        $currencies = $this->getActive();
-        $options = [];
+        $stats = [];
         
-        foreach ($currencies as $currency) {
-            $label = $currency['name'] . ' (' . $currency['symbol'] . ')';
-            if ($currency['is_primary']) {
-                $label .= ' - Primary';
-            }
+        foreach ($queries as $key => $query) {
+            $stmt = DB::query($query);
+            $result = $stmt->fetch();
             
-            $options[] = [
-                'value' => $currency['code'],
-                'label' => $label,
-                'symbol' => $currency['symbol'],
-                'is_primary' => (bool) $currency['is_primary']
-            ];
-        }
-        
-        return $options;
-    }
-
-    /**
-     * Set primary currency
-     */
-    public function setPrimary(string $code): bool
-    {
-        DB::beginTransaction();
-        
-        try {
-            // Remove primary flag from all currencies
-            DB::query("UPDATE {$this->table} SET is_primary = 0");
-            
-            // Set new primary
-            $updated = $this->updateByCode($code, ['is_primary' => 1]);
-            
-            if (!$updated) {
-                throw new \InvalidArgumentException("Currency {$code} not found");
-            }
-
-            DB::commit();
-            return true;
-
-        } catch (\Exception $e) {
-            DB::rollback();
-            throw $e;
-        }
-    }
-
-    /**
-     * Private helper methods
-     */
-    private function updateByCode(string $code, array $data): bool
-    {
-        $fields = [];
-        $params = [];
-        
-        foreach ($data as $key => $value) {
-            $fields[] = "`{$key}` = ?";
-            $params[] = $value;
-        }
-        
-        $params[] = strtoupper($code);
-        
-        $sql = "UPDATE {$this->table} SET " . implode(', ', $fields) . " WHERE code = ?";
-        $stmt = DB::query($sql, $params);
-        
-        return $stmt->rowCount() > 0;
-    }
-
-    private function logExchangeRateChange(string $code, float $newRate, float $previousRate, ?int $userId): void
-    {
-        $sql = "INSERT INTO sp_exchange_rate_history 
-                (currency_code, rate, previous_rate, changed_by) 
-                VALUES (?, ?, ?, ?)";
-        DB::query($sql, [strtoupper($code), $newRate, $previousRate, $userId]);
-    }
-
-    /**
-     * Create new currency
-     */
-    public function createCurrency(array $data): int
-    {
-        // Validate required fields
-        $required = ['code', 'name', 'symbol', 'exchange_rate'];
-        foreach ($required as $field) {
-            if (empty($data[$field])) {
-                throw new \InvalidArgumentException("Field {$field} is required");
+            if ($key === 'primary') {
+                $stats[$key] = $result['code'] ?? 'None';
+            } elseif ($key === 'last_updated') {
+                $stats[$key] = $result['last_updated'];
+            } else {
+                $stats[$key] = (int)$result['count'];
             }
         }
 
-        // Ensure code is uppercase
-        $data['code'] = strtoupper($data['code']);
-
-        // Set defaults
-        $data['is_active'] = $data['is_active'] ?? 1;
-        $data['is_primary'] = $data['is_primary'] ?? 0;
-        $data['decimal_places'] = $data['decimal_places'] ?? 2;
-
-        // Check if code already exists
-        if ($this->getByCode($data['code'])) {
-            throw new \InvalidArgumentException("Currency {$data['code']} already exists");
-        }
-
-        return $this->create($data);
+        return $stats;
     }
 
     /**
-     * Get all currencies with pagination
+     * Check if currency is being used in transactions
      */
-    public function paginate(int $page = 1, int $perPage = 15): array
+    public function getUsageCount(string $code): int
+    {
+        // This will be implemented when transaction tables are added
+        // For now, return 0 to allow deletions
+        return 0;
+        
+        /* Future implementation:
+        $tables = ['sp_quotes', 'sp_sales_orders', 'sp_invoices', 'sp_payments'];
+        $totalUsage = 0;
+        
+        foreach ($tables as $table) {
+            try {
+                $stmt = DB::query("SELECT COUNT(*) as count FROM {$table} WHERE currency_code = ?", [$code]);
+                $result = $stmt->fetch();
+                $totalUsage += (int)($result['count'] ?? 0);
+            } catch (\Exception $e) {
+                // Table might not exist yet
+                continue;
+            }
+        }
+        
+        return $totalUsage;
+        */
+    }
+
+    /**
+     * Paginate currencies
+     */
+    public function paginate(int $page = 1, int $perPage = 20): array
     {
         $offset = ($page - 1) * $perPage;
         
         // Get total count
-        $countSql = "SELECT COUNT(*) as total FROM {$this->table}";
-        $countStmt = DB::query($countSql);
-        $total = $countStmt->fetch()['total'];
+        $countStmt = DB::query("SELECT COUNT(*) as count FROM {$this->table}");
+        $totalRecords = (int)$countStmt->fetch()['count'];
+        $totalPages = (int)ceil($totalRecords / $perPage);
         
         // Get paginated results
-        $sql = "SELECT * FROM {$this->table} 
-                ORDER BY is_primary DESC, is_active DESC, name ASC 
-                LIMIT ? OFFSET ?";
-        $stmt = DB::query($sql, [$perPage, $offset]);
-        $data = $stmt->fetchAll();
+        $stmt = DB::query("
+            SELECT * FROM {$this->table} 
+            ORDER BY is_primary DESC, code ASC 
+            LIMIT ? OFFSET ?
+        ", [$perPage, $offset]);
+        
+        $items = $stmt->fetchAll();
         
         return [
-            'data' => $data,
-            'total' => $total,
-            'per_page' => $perPage,
-            'current_page' => $page,
-            'last_page' => (int) ceil($total / $perPage),
-            'from' => $offset + 1,
-            'to' => min($offset + $perPage, $total)
+            'items' => $items,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total_records' => $totalRecords,
+                'total_pages' => $totalPages,
+                'has_next' => $page < $totalPages,
+                'has_prev' => $page > 1
+            ]
         ];
+    }
+
+    /**
+     * Clear all primary currency flags
+     */
+    private function clearPrimaryFlags(): void
+    {
+        DB::query("UPDATE {$this->table} SET is_primary = 0");
+    }
+
+    /**
+     * Record exchange rate change in history
+     */
+    private function recordExchangeRateHistory(string $code, ?float $oldRate, float $newRate, ?int $userId = null): void
+    {
+        try {
+            DB::query("
+                INSERT INTO sp_currency_history (currency_code, old_rate, new_rate, updated_by) 
+                VALUES (?, ?, ?, ?)
+            ", [$code, $oldRate, $newRate, $userId]);
+        } catch (\Exception $e) {
+            // Log error but don't fail the main operation
+            error_log("Failed to record currency history: " . $e->getMessage());
+        }
     }
 }
