@@ -155,16 +155,27 @@ ob_start();
                                             <td><?= number_format($item['qty'], 2) ?></td>
                                             <td><?= Helpers::formatCurrency($item['price']) ?></td>
                                             <td>
-                                                <?= Helpers::formatCurrency($item['tax']) ?>
-                                                <?php if ($item['tax_type'] === 'percent'): ?>
-                                                    <small class="text-muted">(<?= $item['tax'] ?>%)</small>
-                                                <?php endif; ?>
+                                                <?php 
+                                                $lineSubtotal = $item['qty'] * $item['price'];
+                                                if ($item['tax_type'] === 'percent') {
+                                                    $lineTax = $lineSubtotal * $item['tax'] / 100;
+                                                    echo Helpers::formatCurrency($lineTax);
+                                                    echo ' <small class="text-muted">(' . $item['tax'] . '%)</small>';
+                                                } else {
+                                                    echo Helpers::formatCurrency($item['tax']);
+                                                }
+                                                ?>
                                             </td>
                                             <td>
-                                                <?= Helpers::formatCurrency($item['discount']) ?>
-                                                <?php if ($item['discount_type'] === 'percent'): ?>
-                                                    <small class="text-muted">(<?= $item['discount'] ?>%)</small>
-                                                <?php endif; ?>
+                                                <?php 
+                                                if ($item['discount_type'] === 'percent') {
+                                                    $lineDiscount = $lineSubtotal * $item['discount'] / 100;
+                                                    echo Helpers::formatCurrency($lineDiscount);
+                                                    echo ' <small class="text-muted">(' . $item['discount'] . '%)</small>';
+                                                } else {
+                                                    echo Helpers::formatCurrency($item['discount']);
+                                                }
+                                                ?>
                                             </td>
                                             <td><strong><?= Helpers::formatCurrency($lineTotal) ?></strong></td>
                                         </tr>
