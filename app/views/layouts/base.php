@@ -6,6 +6,8 @@ use App\Core\Helpers;
 <html lang="<?= I18n::getLocale() ?>" dir="<?= I18n::getDirection() ?>">
 <head>
     <meta charset="UTF-8">
+	<!-- FontAwesome Icons -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= $title ?? I18n::t('app.name') ?></title>
     <link rel="stylesheet" href="<?= Helpers::asset('css/app.css') ?>">
@@ -43,6 +45,7 @@ use App\Core\Helpers;
         }
         ?>'
     };
+		
     </script>
     
     <!-- Multi-Currency JavaScript -->
