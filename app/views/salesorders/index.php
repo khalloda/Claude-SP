@@ -138,9 +138,13 @@ ob_start();
                                     </td>
                                     <td>
                                         <div>
-                                            <strong><?= Helpers::escape($salesOrder['client_name'] ?? 'Unknown') ?></strong>
+                                            <strong>
+                                                <a href="/clients/<?= $salesOrder['client_id'] ?? 0 ?>" style="text-decoration: none; color: #333;">
+                                                    <?= Helpers::escape($salesOrder['client_name'] ?? 'Unknown Client') ?>
+                                                </a>
+                                            </strong>
                                             <small style="display: block; color: #666;">
-                                                <?= ucfirst($salesOrder['client_type'] ?? 'unknown') ?>
+                                                <?= ucfirst($salesOrder['client_type'] ?? 'individual') ?>
                                             </small>
                                         </div>
                                     </td>
