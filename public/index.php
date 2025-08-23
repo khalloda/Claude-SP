@@ -118,8 +118,13 @@ $r->get('/profile/edit', 'ProfileController@edit');
 $r->post('/profile/update', 'ProfileController@update');
 $r->get('/profile/change-password', 'ProfileController@changePassword');
 $r->post('/profile/change-password', 'ProfileController@updatePassword');
+
+	// User Management (Admin Only)
+$r->resource('/users', 'UserController');
+$r->post('/users/{id}/delete', 'UserController@destroy');
 });
 
 // Handle the request
 $router->resolve();
+
 
