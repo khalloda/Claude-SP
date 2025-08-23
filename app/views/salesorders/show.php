@@ -2,7 +2,7 @@
 use App\Core\I18n;
 use App\Core\Helpers;
 
-$title = I18n::t('navigation.sales_orders') . ' - Sales Order #' . str_pad($salesOrder['id'], 4, '0', STR_PAD_LEFT);
+$title = I18n::t('navigation.salesorders') . ' - Sales Order #' . str_pad($salesOrder['id'], 4, '0', STR_PAD_LEFT);
 $showNav = true;
 
 ob_start();
@@ -30,29 +30,22 @@ ob_start();
                 <a href="/salesorders" class="btn btn-secondary"><?= I18n::t('actions.back') ?></a>
                 
                 <?php if ($salesOrder['status'] === 'open'): ?>
-                    <form method="POST" action="/salesorders/<?= $salesOrder['id'] ?>/deliver" style="display: inline;" 
-                          onsubmit="return confirm('Mark this sales order as delivered? This will update stock levels.')">
-                        <?= Helpers::csrfField() ?>
-                        <button type="submit" class="btn btn-success">Mark as Delivered</button>
-                    </form>
+                    <a href="/salesorders/<?= $salesOrder['id'] ?>/edit" class="btn btn-primary"><?= I18n::t('actions.edit') ?></a>
                     
-                    <form method="POST" action="/salesorders/<?= $salesOrder['id'] ?>/convert-to-invoice" style="display: inline;" 
-                          onsubmit="return confirm('Convert this sales order to an invoice?')">
+                    <form method="POST" action="/salesorders/<?= $salesOrder['id'] ?>/deliver" style="display: inline;">
                         <?= Helpers::csrfField() ?>
-                        <button type="submit" class="btn btn-primary">Convert to Invoice</button>
+                        <button type="submit" class="btn btn-success" 
+                                onclick="return confirm('Mark this order as delivered? This will deduct stock from inventory.')">
+                            Deliver
+                        </button>
                     </form>
-                    
-                    <form method="POST" action="/salesorders/<?= $salesOrder['id'] ?>/reject" style="display: inline;" 
-                          onsubmit="return confirm('Reject this sales order? This will release reserved stock.')">
+                <?php endif; ?>
+                
+                <?php if ($salesOrder['status'] === 'delivered'): ?>
+                    <form method="POST" action="/invoices/create-from-so" style="display: inline;">
                         <?= Helpers::csrfField() ?>
-                        <button type="submit" class="btn btn-danger">Reject Order</button>
-                    </form>
-                    
-                <?php elseif ($salesOrder['status'] === 'delivered'): ?>
-                    <form method="POST" action="/salesorders/<?= $salesOrder['id'] ?>/convert-to-invoice" style="display: inline;" 
-                          onsubmit="return confirm('Convert this delivered order to an invoice?')">
-                        <?= Helpers::csrfField() ?>
-                        <button type="submit" class="btn btn-primary">Convert to Invoice</button>
+                        <input type="hidden" name="sales_order_id" value="<?= $salesOrder['id'] ?>">
+                        <button type="submit" class="btn btn-info">Convert to Invoice</button>
                     </form>
                 <?php endif; ?>
             </div>
@@ -60,7 +53,7 @@ ob_start();
     </div>
 
     <div class="row">
-        <!-- Order Information -->
+        <!-- Sales Order Information -->
         <div class="col-md-8">
             <div class="card mb-4">
                 <div class="card-header">
@@ -71,8 +64,10 @@ ob_start();
                         <div class="col-md-6">
                             <h5>Client Information</h5>
                             <p>
-                                <strong><?= Helpers::escape($salesOrder['client_name'] ?? 'Unknown') ?></strong><br>
-                                <small class="text-muted"><?= ucfirst($salesOrder['client_type'] ?? 'unknown') ?></small>
+                                <strong><?= Helpers::escape($salesOrder['client_name']) ?></strong>
+                                <?php if (!empty($salesOrder['client_type'])): ?>
+                                    <br><small class="text-muted"><?= ucfirst($salesOrder['client_type']) ?></small>
+                                <?php endif; ?>
                             </p>
                             
                             <?php if (!empty($salesOrder['client_email'])): ?>
@@ -84,14 +79,15 @@ ob_start();
                             <?php endif; ?>
                             
                             <?php if (!empty($salesOrder['client_address'])): ?>
-                                <p><strong>Address:</strong> <?= Helpers::escape($salesOrder['client_address']) ?></p>
+                                <p><strong>Address:</strong><br><?= nl2br(Helpers::escape($salesOrder['client_address'])) ?></p>
                             <?php endif; ?>
                         </div>
                         
                         <div class="col-md-6">
                             <h5>Order Information</h5>
                             <p><strong>Order #:</strong> <?= str_pad($salesOrder['id'], 4, '0', STR_PAD_LEFT) ?></p>
-                            <p><strong>Status:</strong> 
+                            <p>
+                                <strong>Status:</strong> 
                                 <span class="badge badge-<?= $salesOrder['status'] ?>">
                                     <?= ucfirst($salesOrder['status']) ?>
                                 </span>
@@ -101,7 +97,7 @@ ob_start();
                             <?php if (!empty($salesOrder['quote_id'])): ?>
                                 <p><strong>Quote:</strong> 
                                     <a href="/quotes/<?= $salesOrder['quote_id'] ?>">
-                                        Quote #<?= $salesOrder['quote_id'] ?>
+                                        Quote #<?= str_pad($salesOrder['quote_id'], 4, '0', STR_PAD_LEFT) ?>
                                     </a>
                                 </p>
                             <?php endif; ?>
@@ -112,7 +108,7 @@ ob_start();
                         <div class="row mt-3">
                             <div class="col-12">
                                 <h6>Notes</h6>
-                                <p><?= Helpers::escape($salesOrder['notes']) ?></p>
+                                <p><?= nl2br(Helpers::escape($salesOrder['notes'])) ?></p>
                             </div>
                         </div>
                     <?php endif; ?>
@@ -141,10 +137,22 @@ ob_start();
                                 </thead>
                                 <tbody>
                                     <?php 
-                                    $itemsSubtotal = 0;
                                     foreach ($items as $item): 
-                                        $lineTotal = ($item['qty'] * $item['price']) + $item['tax'] - $item['discount'];
-                                        $itemsSubtotal += $lineTotal;
+                                        // Calculate line subtotal
+                                        $lineSubtotal = $item['qty'] * $item['price'];
+                                        
+                                        // Calculate tax amount
+                                        $lineTax = $item['tax_type'] === 'percent' 
+                                            ? ($lineSubtotal * $item['tax'] / 100)
+                                            : $item['tax'];
+                                        
+                                        // Calculate discount amount  
+                                        $lineDiscount = $item['discount_type'] === 'percent'
+                                            ? ($lineSubtotal * $item['discount'] / 100)
+                                            : $item['discount'];
+                                        
+                                        // Calculate final line total
+                                        $lineTotal = $lineSubtotal + $lineTax - $lineDiscount;
                                     ?>
                                         <tr>
                                             <td>
@@ -155,27 +163,20 @@ ob_start();
                                             <td><?= number_format($item['qty'], 2) ?></td>
                                             <td><?= Helpers::formatCurrency($item['price']) ?></td>
                                             <td>
-                                                <?php 
-                                                $lineSubtotal = $item['qty'] * $item['price'];
-                                                if ($item['tax_type'] === 'percent') {
-                                                    $lineTax = $lineSubtotal * $item['tax'] / 100;
-                                                    echo Helpers::formatCurrency($lineTax);
-                                                    echo ' <small class="text-muted">(' . $item['tax'] . '%)</small>';
-                                                } else {
-                                                    echo Helpers::formatCurrency($item['tax']);
-                                                }
-                                                ?>
+                                                <?php if ($item['tax'] > 0): ?>
+                                                    <?= Helpers::formatCurrency($lineTax) ?>
+                                                    <br><small class="text-muted">(<?= $item['tax'] ?><?= $item['tax_type'] === 'percent' ? '%' : '' ?>)</small>
+                                                <?php else: ?>
+                                                    -
+                                                <?php endif; ?>
                                             </td>
                                             <td>
-                                                <?php 
-                                                if ($item['discount_type'] === 'percent') {
-                                                    $lineDiscount = $lineSubtotal * $item['discount'] / 100;
-                                                    echo Helpers::formatCurrency($lineDiscount);
-                                                    echo ' <small class="text-muted">(' . $item['discount'] . '%)</small>';
-                                                } else {
-                                                    echo Helpers::formatCurrency($item['discount']);
-                                                }
-                                                ?>
+                                                <?php if ($item['discount'] > 0): ?>
+                                                    -<?= Helpers::formatCurrency($lineDiscount) ?>
+                                                    <br><small class="text-muted">(<?= $item['discount'] ?><?= $item['discount_type'] === 'percent' ? '%' : '' ?>)</small>
+                                                <?php else: ?>
+                                                    -
+                                                <?php endif; ?>
                                             </td>
                                             <td><strong><?= Helpers::formatCurrency($lineTotal) ?></strong></td>
                                         </tr>
@@ -184,7 +185,10 @@ ob_start();
                             </table>
                         </div>
                     <?php else: ?>
-                        <p class="text-muted">No items found for this sales order.</p>
+                        <div class="text-center py-4">
+                            <h5 class="text-muted">No items found</h5>
+                            <p class="text-muted">This sales order does not have any items yet.</p>
+                        </div>
                     <?php endif; ?>
                 </div>
             </div>
@@ -194,227 +198,126 @@ ob_start();
         <div class="col-md-4">
             <div class="card">
                 <div class="card-header">
-                    <h4>Order Summary</h4>
+                    <h3>Order Summary</h3>
                 </div>
                 <div class="card-body">
-                    <div class="summary-row">
+                    <div class="d-flex justify-content-between mb-2">
                         <span>Items Subtotal:</span>
                         <span><?= Helpers::formatCurrency($salesOrder['items_subtotal']) ?></span>
                     </div>
                     
-                    <?php if ($salesOrder['items_discount_total'] > 0): ?>
-                        <div class="summary-row">
-                            <span>Items Discount:</span>
-                            <span class="text-success">-<?= Helpers::formatCurrency($salesOrder['items_discount_total']) ?></span>
-                        </div>
-                    <?php endif; ?>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>Items Tax:</span>
+                        <span><?= Helpers::formatCurrency($salesOrder['items_tax_total']) ?></span>
+                    </div>
                     
-                    <?php if ($salesOrder['global_discount_value'] > 0): ?>
-                        <div class="summary-row">
-                            <span>Global Discount:</span>
-                            <span class="text-success">
-                                -<?= Helpers::formatCurrency($salesOrder['discount_total'] - $salesOrder['items_discount_total']) ?>
-                                <?php if ($salesOrder['global_discount_type'] === 'percent'): ?>
-                                    <small>(<?= $salesOrder['global_discount_value'] ?>%)</small>
-                                <?php endif; ?>
-                            </span>
-                        </div>
-                    <?php endif; ?>
-                    
-                    <?php if ($salesOrder['items_tax_total'] > 0): ?>
-                        <div class="summary-row">
-                            <span>Items Tax:</span>
-                            <span><?= Helpers::formatCurrency($salesOrder['items_tax_total']) ?></span>
-                        </div>
-                    <?php endif; ?>
-                    
-                    <?php if ($salesOrder['global_tax_value'] > 0): ?>
-                        <div class="summary-row">
+                    <?php if ($salesOrder['tax_total'] > $salesOrder['items_tax_total']): ?>
+                        <div class="d-flex justify-content-between mb-2">
                             <span>Global Tax:</span>
-                            <span>
-                                <?= Helpers::formatCurrency($salesOrder['tax_total'] - $salesOrder['items_tax_total']) ?>
-                                <?php if ($salesOrder['global_tax_type'] === 'percent'): ?>
-                                    <small>(<?= $salesOrder['global_tax_value'] ?>%)</small>
-                                <?php endif; ?>
-                            </span>
+                            <span><?= Helpers::formatCurrency($salesOrder['tax_total'] - $salesOrder['items_tax_total']) ?></span>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <?php if ($salesOrder['items_discount_total'] > 0): ?>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Items Discount:</span>
+                            <span>-<?= Helpers::formatCurrency($salesOrder['items_discount_total']) ?></span>
+                        </div>
+                    <?php endif; ?>
+                    
+                    <?php if ($salesOrder['discount_total'] > $salesOrder['items_discount_total']): ?>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Global Discount:</span>
+                            <span>-<?= Helpers::formatCurrency($salesOrder['discount_total'] - $salesOrder['items_discount_total']) ?></span>
                         </div>
                     <?php endif; ?>
                     
                     <hr>
-                    <div class="summary-row final-total">
-                        <span><strong>Grand Total:</strong></span>
-                        <span><strong><?= Helpers::formatCurrency($salesOrder['grand_total']) ?></strong></span>
+                    
+                    <div class="d-flex justify-content-between mb-3">
+                        <strong>Grand Total:</strong>
+                        <strong><?= Helpers::formatCurrency($salesOrder['grand_total']) ?></strong>
                     </div>
+                    
+                    <?php if ($salesOrder['status'] === 'delivered'): ?>
+                        <div class="alert alert-success">
+                            <i class="fas fa-check-circle"></i> Order Delivered
+                            <br><small>This order has been successfully delivered to the client.</small>
+                        </div>
+                    <?php elseif ($salesOrder['status'] === 'open'): ?>
+                        <div class="alert alert-info">
+                            <i class="fas fa-clock"></i> Order Open
+                            <br><small>This order is open and ready for delivery.</small>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </div>
-            
-            <?php if ($salesOrder['status'] === 'delivered'): ?>
-                <div class="card mt-3" style="border-left: 4px solid #28a745;">
-                    <div class="card-body">
-                        <h5 style="color: #28a745;">✅ Order Delivered</h5>
-                        <p class="text-muted mb-0">This order has been successfully delivered to the client.</p>
+
+            <!-- Stock Information -->
+            <?php if (!empty($items) && $salesOrder['status'] === 'open'): ?>
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5>Stock Information</h5>
                     </div>
-                </div>
-            <?php elseif ($salesOrder['status'] === 'rejected'): ?>
-                <div class="card mt-3" style="border-left: 4px solid #dc3545;">
                     <div class="card-body">
-                        <h5 style="color: #dc3545;">❌ Order Rejected</h5>
-                        <p class="text-muted mb-0">This order has been rejected and stock has been released.</p>
-                    </div>
-                </div>
-            <?php else: ?>
-                <div class="card mt-3" style="border-left: 4px solid #007bff;">
-                    <div class="card-body">
-                        <h5 style="color: #007bff;">📦 Order Open</h5>
-                        <p class="text-muted mb-0">This order is ready for processing and delivery.</p>
+                        <?php foreach ($items as $item): ?>
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div>
+                                    <small><?= Helpers::escape($item['product_code']) ?></small>
+                                    <br><?= Helpers::escape($item['product_name']) ?>
+                                </div>
+                                <div class="text-right">
+                                    <span class="badge <?= ($item['available_qty'] ?? 0) >= $item['qty'] ? 'badge-success' : 'badge-warning' ?>">
+                                        <?= number_format($item['available_qty'] ?? 0, 2) ?> available
+                                    </span>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
                     </div>
                 </div>
             <?php endif; ?>
         </div>
     </div>
+
+    <!-- Related Documents -->
+    <?php if (!empty($invoices)): ?>
+        <div class="card mt-4">
+            <div class="card-header">
+                <h3>Related Invoices</h3>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Invoice #</th>
+                                <th>Status</th>
+                                <th>Total</th>
+                                <th>Paid</th>
+                                <th>Balance</th>
+                                <th>Created</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($invoices as $invoice): ?>
+                                <tr>
+                                    <td>#<?= str_pad($invoice['id'], 4, '0', STR_PAD_LEFT) ?></td>
+                                    <td><span class="badge badge-<?= $invoice['status'] ?>"><?= ucfirst($invoice['status']) ?></span></td>
+                                    <td><?= Helpers::formatCurrency($invoice['grand_total']) ?></td>
+                                    <td><?= Helpers::formatCurrency($invoice['paid_total']) ?></td>
+                                    <td><?= Helpers::formatCurrency($invoice['grand_total'] - $invoice['paid_total']) ?></td>
+                                    <td><?= Helpers::formatDate($invoice['created_at']) ?></td>
+                                    <td><a href="/invoices/<?= $invoice['id'] ?>" class="btn btn-sm btn-primary">View</a></td>
+                                </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
 </div>
-
-<style>
-.badge {
-    padding: 0.25rem 0.5rem;
-    border-radius: 3px;
-    font-size: 0.8rem;
-    color: white;
-}
-
-.badge-open { background-color: #007bff; }
-.badge-delivered { background-color: #28a745; }
-.badge-rejected { background-color: #dc3545; }
-
-.card {
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-    border: none;
-    margin-bottom: 1rem;
-}
-
-.card-header {
-    background: #f8f9fa;
-    border-bottom: 1px solid #dee2e6;
-    padding: 1rem 1.25rem;
-}
-
-.card-header h3, .card-header h4 {
-    margin: 0;
-    color: #495057;
-}
-
-.card-body {
-    padding: 1.25rem;
-}
-
-.summary-row {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 0.5rem;
-}
-
-.final-total {
-    font-size: 1.1rem;
-    padding-top: 0.5rem;
-}
-
-.text-success {
-    color: #28a745 !important;
-}
-
-.text-muted {
-    color: #6c757d !important;
-}
-
-.d-flex {
-    display: flex;
-}
-
-.justify-content-between {
-    justify-content: space-between;
-}
-
-.align-items-start {
-    align-items: flex-start;
-}
-
-.mb-4 {
-    margin-bottom: 2rem;
-}
-
-.row {
-    display: flex;
-    flex-wrap: wrap;
-    margin: -0.5rem;
-}
-
-.col-md-8 {
-    flex: 0 0 66.666%;
-    padding: 0.5rem;
-}
-
-.col-md-6 {
-    flex: 0 0 50%;
-    padding: 0.5rem;
-}
-
-.col-md-4 {
-    flex: 0 0 33.333%;
-    padding: 0.5rem;
-}
-
-.col-12 {
-    flex: 0 0 100%;
-    padding: 0.5rem;
-}
-
-@media (max-width: 768px) {
-    .col-md-8, .col-md-6, .col-md-4 {
-        flex: 0 0 100%;
-    }
-}
-
-.table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 1rem;
-}
-
-.table th,
-.table td {
-    padding: 0.75rem;
-    border-bottom: 1px solid #dee2e6;
-    text-align: left;
-    vertical-align: top;
-}
-
-.table th {
-    background-color: #f8f9fa;
-    font-weight: 600;
-}
-
-.table-responsive {
-    overflow-x: auto;
-}
-
-.btn {
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: 4px;
-    text-decoration: none;
-    display: inline-block;
-    cursor: pointer;
-    font-size: 0.9rem;
-    margin-right: 0.5rem;
-}
-
-.btn-primary { background-color: #007bff; color: white; }
-.btn-secondary { background-color: #6c757d; color: white; }
-.btn-success { background-color: #28a745; color: white; }
-.btn-danger { background-color: #dc3545; color: white; }
-</style>
 
 <?php
 $content = ob_get_clean();
