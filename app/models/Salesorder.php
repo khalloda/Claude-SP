@@ -27,6 +27,8 @@ class SalesOrder extends Model
         'notes'
     ];
 
+// Replace the existing search method in SalesOrder.php with this:
+    
     public function search(string $query, int $page = 1, int $perPage = 15): array
     {
         $offset = ($page - 1) * $perPage;
@@ -40,7 +42,12 @@ class SalesOrder extends Model
         $total = $countStmt->fetch()['total'];
         
         // Get paginated results with client names
-        $sql = "SELECT so.*, c.name as client_name, c.type as client_type
+        $sql = "SELECT so.*, 
+                       c.name as client_name, 
+                       c.type as client_type,
+                       c.email as client_email,
+                       c.phone as client_phone,
+                       c.address as client_address
                 FROM {$this->table} so
                 LEFT JOIN sp_clients c ON so.client_id = c.id
                 WHERE c.name LIKE ? OR so.notes LIKE ? OR so.id LIKE ?
@@ -271,5 +278,39 @@ class SalesOrder extends Model
         }
         
         return true;
+    }
+	    // Also update the paginate method to include client information:
+    public function paginate(int $page = 1, int $perPage = 15): array
+    {
+        $offset = ($page - 1) * $perPage;
+        
+        // Get total count
+        $countSql = "SELECT COUNT(*) as total FROM {$this->table}";
+        $countStmt = DB::query($countSql);
+        $total = $countStmt->fetch()['total'];
+        
+        // Get paginated results with client names
+        $sql = "SELECT so.*, 
+                       c.name as client_name, 
+                       c.type as client_type,
+                       c.email as client_email,
+                       c.phone as client_phone,
+                       c.address as client_address
+                FROM {$this->table} so
+                LEFT JOIN sp_clients c ON so.client_id = c.id
+                ORDER BY so.created_at DESC 
+                LIMIT ? OFFSET ?";
+        $stmt = DB::query($sql, [$perPage, $offset]);
+        $data = $stmt->fetchAll();
+        
+        return [
+            'data' => $data,
+            'total' => $total,
+            'per_page' => $perPage,
+            'current_page' => $page,
+            'last_page' => (int) ceil($total / $perPage),
+            'from' => $offset + 1,
+            'to' => min($offset + $perPage, $total)
+        ];
     }
 }
