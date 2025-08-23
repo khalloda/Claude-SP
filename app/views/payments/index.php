@@ -3,6 +3,7 @@ use App\Core\I18n;
 use App\Core\Helpers;
 
 $title = I18n::t('navigation.payments');
+$showNav = true;
 
 ob_start();
 ?>
@@ -26,7 +27,7 @@ ob_start();
             <div class="col-md-3">
                 <div class="card">
                     <div class="card-body text-center">
-                        <h3 class="text-primary"><?= number_format($summary['summary']['total_payments']) ?></h3>
+                        <h3 class="text-primary"><?= number_format($summary['summary']['total_payments'] ?? 0) ?></h3>
                         <p class="text-muted">Total Payments (30 days)</p>
                     </div>
                 </div>
@@ -34,7 +35,7 @@ ob_start();
             <div class="col-md-3">
                 <div class="card">
                     <div class="card-body text-center">
-                        <h3 class="text-success"><?= Helpers::formatCurrency($summary['summary']['total_amount']) ?></h3>
+                        <h3 class="text-success"><?= Helpers::formatCurrency($summary['summary']['total_amount'] ?? 0) ?></h3>
                         <p class="text-muted">Total Amount</p>
                     </div>
                 </div>
@@ -42,7 +43,7 @@ ob_start();
             <div class="col-md-3">
                 <div class="card">
                     <div class="card-body text-center">
-                        <h3 class="text-info"><?= Helpers::formatCurrency($summary['summary']['average_amount']) ?></h3>
+                        <h3 class="text-info"><?= Helpers::formatCurrency($summary['summary']['average_amount'] ?? 0) ?></h3>
                         <p class="text-muted">Average Payment</p>
                     </div>
                 </div>
@@ -50,7 +51,7 @@ ob_start();
             <div class="col-md-3">
                 <div class="card">
                     <div class="card-body text-center">
-                        <h3 class="text-warning"><?= number_format($summary['summary']['unique_clients']) ?></h3>
+                        <h3 class="text-warning"><?= number_format($summary['summary']['unique_clients'] ?? 0) ?></h3>
                         <p class="text-muted">Paying Clients</p>
                     </div>
                 </div>
@@ -70,32 +71,19 @@ ob_start();
                                id="search" 
                                name="search" 
                                placeholder="Client name, note, method..."
-                               value="<?= Helpers::escape($search ?? '') ?>">
-                    </div>
-                    
-                    <div class="col-md-3">
-                        <label for="client_id" class="form-label">Client</label>
-                        <select class="form-control" id="client_id" name="client_id">
-                            <option value="">All Clients</option>
-                            <?php foreach ($clients as $client): ?>
-                                <option value="<?= $client['id'] ?>" 
-                                        <?= ($clientId ?? '') == $client['id'] ? 'selected' : '' ?>>
-                                    <?= Helpers::escape($client['name']) ?> (<?= ucfirst($client['type']) ?>)
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+                               value="<?= Helpers::escape($search ?? '') ?>"
+                        >
                     </div>
                     
                     <div class="col-md-2">
-                        <label for="method" class="form-label">Method</label>
-                        <select class="form-control" id="method" name="method">
+                        <label for="method" class="form-label">Payment Method</label>
+                        <select name="method" class="form-control" id="method">
                             <option value="">All Methods</option>
-                            <?php foreach ($paymentMethods as $paymentMethod): ?>
-                                <option value="<?= $paymentMethod ?>" 
-                                        <?= ($method ?? '') === $paymentMethod ? 'selected' : '' ?>>
-                                    <?= ucfirst(str_replace('_', ' ', $paymentMethod)) ?>
-                                </option>
-                            <?php endforeach; ?>
+                            <option value="cash" <?= ($method ?? '') === 'cash' ? 'selected' : '' ?>>Cash</option>
+                            <option value="bank_transfer" <?= ($method ?? '') === 'bank_transfer' ? 'selected' : '' ?>>Bank Transfer</option>
+                            <option value="check" <?= ($method ?? '') === 'check' ? 'selected' : '' ?>>Check</option>
+                            <option value="credit_card" <?= ($method ?? '') === 'credit_card' ? 'selected' : '' ?>>Credit Card</option>
+                            <option value="other" <?= ($method ?? '') === 'other' ? 'selected' : '' ?>>Other</option>
                         </select>
                     </div>
                     
@@ -105,7 +93,8 @@ ob_start();
                                class="form-control" 
                                id="date_from" 
                                name="date_from" 
-                               value="<?= Helpers::input('date_from', '') ?>">
+                               value="<?= Helpers::escape($dateFrom ?? '') ?>"
+                        >
                     </div>
                     
                     <div class="col-md-2">
@@ -114,15 +103,21 @@ ob_start();
                                class="form-control" 
                                id="date_to" 
                                name="date_to" 
-                               value="<?= Helpers::input('date_to', '') ?>">
+                               value="<?= Helpers::escape($dateTo ?? '') ?>"
+                        >
                     </div>
-                </div>
-                
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <button type="submit" class="btn btn-secondary">Filter</button>
-                        <a href="/payments" class="btn btn-outline-secondary ml-2">Clear</a>
+                    
+                    <div class="col-md-2">
+                        <label>&nbsp;</label>
+                        <button type="submit" class="btn btn-secondary d-block"><?= I18n::t('actions.filter') ?></button>
                     </div>
+                    
+                    <?php if (!empty($search) || !empty($method) || !empty($dateFrom) || !empty($dateTo)): ?>
+                        <div class="col-md-1">
+                            <label>&nbsp;</label>
+                            <a href="/payments" class="btn btn-secondary d-block">Clear</a>
+                        </div>
+                    <?php endif; ?>
                 </div>
             </form>
         </div>
@@ -130,26 +125,23 @@ ob_start();
 
     <!-- Payments Table -->
     <div class="card">
-        <div class="card-header">
-            <h4>Payment Records</h4>
-        </div>
         <div class="card-body">
-            <?php if (!empty($payments['data'])): ?>
-                <div class="table-responsive">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Payment #</th>
-                                <th>Date</th>
-                                <th>Client</th>
-                                <th>Invoice #</th>
-                                <th>Amount</th>
-                                <th>Method</th>
-                                <th>Note</th>
-                                <th><?= I18n::t('common.action') ?></th>
-                            </tr>
-                        </thead>
-                        <tbody>
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Payment #</th>
+                            <th>Client</th>
+                            <th>Invoice</th>
+                            <th>Amount</th>
+                            <th>Method</th>
+                            <th>Date</th>
+                            <th>Note</th>
+                            <th><?= I18n::t('common.action') ?></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php if (!empty($payments['data'])): ?>
                             <?php foreach ($payments['data'] as $payment): ?>
                                 <tr>
                                     <td>
@@ -157,196 +149,229 @@ ob_start();
                                             #<?= str_pad($payment['id'], 4, '0', STR_PAD_LEFT) ?>
                                         </a>
                                     </td>
-                                    <td><?= Helpers::formatDate($payment['created_at']) ?></td>
                                     <td>
                                         <div>
                                             <strong><?= Helpers::escape($payment['client_name'] ?? 'Unknown') ?></strong>
                                             <small style="display: block; color: #666;">
-                                                <?= ucfirst($payment['client_type'] ?? 'company') ?>
+                                                <?= ucfirst($payment['client_type'] ?? 'unknown') ?>
                                             </small>
                                         </div>
                                     </td>
                                     <td>
-                                        <a href="/invoices/<?= $payment['invoice_id'] ?>" style="text-decoration: none; color: #667eea;">
-                                            #<?= str_pad($payment['invoice_id'], 4, '0', STR_PAD_LEFT) ?>
-                                        </a>
-                                        <?php if (!empty($payment['invoice_total'])): ?>
-                                            <br><small style="color: #666;">
-                                                Total: <?= Helpers::formatCurrency($payment['invoice_total']) ?>
-                                            </small>
+                                        <?php if (isset($payment['invoice_id']) && $payment['invoice_id']): ?>
+                                            <a href="/invoices/<?= $payment['invoice_id'] ?>" style="text-decoration: none; color: #28a745;">
+                                                Invoice #<?= $payment['invoice_id'] ?>
+                                            </a>
+                                        <?php else: ?>
+                                            <span style="color: #666;">-</span>
                                         <?php endif; ?>
                                     </td>
                                     <td>
                                         <span style="color: #28a745; font-weight: bold;">
-                                            <?= Helpers::formatCurrency($payment['amount']) ?>
+                                            <?= Helpers::formatCurrency($payment['amount'] ?? 0) ?>
                                         </span>
                                     </td>
                                     <td>
-                                        <span class="badge badge-secondary">
-                                            <?= ucfirst(str_replace('_', ' ', $payment['method'])) ?>
+                                        <span class="badge badge-method badge-<?= str_replace('_', '-', $payment['method'] ?? 'other') ?>">
+                                            <?= ucfirst(str_replace('_', ' ', $payment['method'] ?? 'Other')) ?>
+                                        </span>
+                                    </td>
+                                    <td><?= Helpers::formatDate($payment['created_at'] ?? null) ?></td>
+                                    <td>
+                                        <span style="max-width: 200px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?= Helpers::escape($payment['note'] ?? '') ?>">
+                                            <?= Helpers::escape($payment['note'] ?? '-') ?>
                                         </span>
                                     </td>
                                     <td>
-                                        <?php if (!empty($payment['note'])): ?>
-                                            <span title="<?= Helpers::escape($payment['note']) ?>">
-                                                <?= Helpers::escape(strlen($payment['note']) > 30 ? substr($payment['note'], 0, 30) . '...' : $payment['note']) ?>
-                                            </span>
-                                        <?php else: ?>
-                                            <span class="text-muted">-</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                                            <a href="/payments/<?= $payment['id'] ?>" class="btn btn-sm btn-secondary">
-                                                <?= I18n::t('actions.view') ?>
-                                            </a>
+                                        <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+                                            <a href="/payments/<?= $payment['id'] ?>" class="btn btn-sm btn-secondary"><?= I18n::t('actions.view') ?></a>
                                             
-                                            <?php 
-                                            // Check if payment is recent enough to edit (24 hours)
-                                            $paymentTime = strtotime($payment['created_at']);
-                                            $twentyFourHoursAgo = time() - (24 * 60 * 60);
-                                            $oneHourAgo = time() - (60 * 60);
-                                            ?>
-                                            
-                                            <?php if ($paymentTime > $twentyFourHoursAgo): ?>
-                                                <a href="/payments/<?= $payment['id'] ?>/edit" class="btn btn-sm btn-primary">
-                                                    <?= I18n::t('actions.edit') ?>
-                                                </a>
-                                            <?php endif; ?>
-                                            
-                                            <?php if ($paymentTime > $oneHourAgo): ?>
+                                            <?php if (!isset($payment['is_system_generated']) || !$payment['is_system_generated']): ?>
+                                                <a href="/payments/<?= $payment['id'] ?>/edit" class="btn btn-sm btn-primary"><?= I18n::t('actions.edit') ?></a>
+                                                
                                                 <form method="POST" action="/payments/<?= $payment['id'] ?>/delete" style="display: inline;" 
-                                                      onsubmit="return confirm('Are you sure you want to reverse this payment? This will update the invoice balance.')">
+                                                      onsubmit="return confirm('Are you sure you want to delete this payment? This will affect invoice balances.')">
                                                     <?= Helpers::csrfField() ?>
-                                                    <button type="submit" class="btn btn-sm btn-danger">Reverse</button>
+                                                    <button type="submit" class="btn btn-sm btn-danger"><?= I18n::t('actions.delete') ?></button>
                                                 </form>
                                             <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                
-                <!-- Pagination -->
-                <?php if (isset($payments['last_page']) && $payments['last_page'] > 1): ?>
-                    <div class="pagination-wrapper">
-                        <?php
-                        $currentPage = $payments['current_page'];
-                        $lastPage = $payments['last_page'];
-                        $queryParams = $_GET;
-                        ?>
-                        
-                        <?php if ($currentPage > 1): ?>
-                            <?php 
-                            $queryParams['page'] = $currentPage - 1;
-                            ?>
-                            <a href="/payments?<?= http_build_query($queryParams) ?>" class="btn btn-sm btn-secondary">Previous</a>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="8" style="text-align: center; padding: 2rem; color: #666;">
+                                    No payments found
+                                </td>
+                            </tr>
                         <?php endif; ?>
-                        
-                        <span class="mx-3">
-                            Page <?= $currentPage ?> of <?= $lastPage ?>
-                            (<?= $payments['from'] ?>-<?= $payments['to'] ?> of <?= $payments['total'] ?> payments)
-                        </span>
-                        
-                        <?php if ($currentPage < $lastPage): ?>
-                            <?php 
-                            $queryParams['page'] = $currentPage + 1;
-                            ?>
-                            <a href="/payments?<?= http_build_query($queryParams) ?>" class="btn btn-sm btn-secondary">Next</a>
-                        <?php endif; ?>
-                    </div>
-                <?php endif; ?>
-                
-            <?php else: ?>
-                <div style="text-align: center; padding: 3rem; color: #666;">
-                    <h4>No payments found</h4>
-                    <p>No payment records match your current filters.</p>
-                    <a href="/payments/create" class="btn btn-primary">Record First Payment</a>
-                </div>
-            <?php endif; ?>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 
-    <!-- Payment Methods Summary -->
-    <?php if (!empty($summary['methods'])): ?>
-        <div class="card mt-4">
-            <div class="card-header">
-                <h4>Payment Methods Summary (Last 30 Days)</h4>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <?php foreach ($summary['methods'] as $methodSummary): ?>
-                        <div class="col-md-3 mb-3">
-                            <div class="text-center p-3" style="border: 1px solid #dee2e6; border-radius: 0.375rem;">
-                                <h5><?= ucfirst(str_replace('_', ' ', $methodSummary['method'])) ?></h5>
-                                <p class="mb-1">
-                                    <strong><?= Helpers::formatCurrency($methodSummary['total']) ?></strong>
-                                </p>
-                                <small class="text-muted"><?= $methodSummary['count'] ?> payments</small>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
+    <!-- Pagination -->
+    <?php if (isset($payments['last_page']) && $payments['last_page'] > 1): ?>
+        <div class="pagination-wrapper">
+            <?php
+            $currentPage = $payments['current_page'];
+            $lastPage = $payments['last_page'];
+            $queryParams = $_GET;
+            ?>
+            
+            <?php if ($currentPage > 1): ?>
+                <?php 
+                $queryParams['page'] = $currentPage - 1;
+                ?>
+                <a href="/payments?<?= http_build_query($queryParams) ?>" class="btn btn-sm btn-secondary">Previous</a>
+            <?php endif; ?>
+            
+            <span class="mx-3">Page <?= $currentPage ?> of <?= $lastPage ?></span>
+            
+            <?php if ($currentPage < $lastPage): ?>
+                <?php 
+                $queryParams['page'] = $currentPage + 1;
+                ?>
+                <a href="/payments?<?= http_build_query($queryParams) ?>" class="btn btn-sm btn-secondary">Next</a>
+            <?php endif; ?>
         </div>
     <?php endif; ?>
 </div>
 
 <style>
-/* Additional styles for payments */
-.badge-secondary {
-    background-color: #6c757d;
+.badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+    color: white;
+}
+
+.badge-method {
+    font-size: 0.7rem;
+}
+
+.badge-cash { background-color: #28a745; }
+.badge-bank-transfer { background-color: #007bff; }
+.badge-check { background-color: #ffc107; color: #000; }
+.badge-credit-card { background-color: #17a2b8; }
+.badge-other { background-color: #6c757d; }
+
+.card {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    border: none;
+    margin-bottom: 2rem;
+}
+
+.card-body {
+    padding: 1.5rem;
+}
+
+.row {
+    display: flex;
+    flex-wrap: wrap;
+    margin: -0.5rem;
+}
+
+.col-md-3, .col-md-2, .col-md-1 {
+    padding: 0.5rem;
+}
+
+.col-md-3 { flex: 0 0 25%; }
+.col-md-2 { flex: 0 0 16.666%; }
+.col-md-1 { flex: 0 0 8.333%; }
+
+@media (max-width: 768px) {
+    .col-md-3, .col-md-2, .col-md-1 {
+        flex: 0 0 100%;
+    }
+}
+
+.d-block {
+    display: block;
+    width: 100%;
 }
 
 .pagination-wrapper {
-    margin-top: 1.5rem;
+    margin-top: 2rem;
     text-align: center;
-    padding: 1rem;
-    border-top: 1px solid #dee2e6;
 }
 
-.card {
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    border: 1px solid #e3e6f0;
+.mx-3 {
+    margin: 0 1rem;
 }
 
-.card-header {
-    background-color: #f8f9fc;
-    border-bottom: 1px solid #e3e6f0;
+.d-flex {
+    display: flex;
 }
 
-/* RTL Support */
-[dir="rtl"] .d-flex.justify-content-between {
-    flex-direction: row-reverse;
+.justify-content-between {
+    justify-content: space-between;
 }
 
-[dir="rtl"] .text-center {
-    text-align: center !important;
+.align-items-center {
+    align-items: center;
 }
 
-[dir="rtl"] .table th,
-[dir="rtl"] .table td {
-    text-align: right;
+.mb-4 {
+    margin-bottom: 2rem;
+}
+
+.form-label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.form-control {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    text-decoration: none;
+    display: inline-block;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.btn-primary { background-color: #007bff; color: white; }
+.btn-secondary { background-color: #6c757d; color: white; }
+.btn-danger { background-color: #dc3545; color: white; }
+.btn-sm { padding: 0.25rem 0.5rem; font-size: 0.8rem; }
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+}
+
+.table th,
+.table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid #dee2e6;
+    text-align: left;
+    vertical-align: top;
+}
+
+.table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+}
+
+.table-responsive {
+    overflow-x: auto;
 }
 </style>
-
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('Payments Index Loaded');
-    console.log('Total Payments:', <?= count($payments['data'] ?? []) ?>);
-    
-    // Auto-submit form on filter change (optional)
-    const filterInputs = document.querySelectorAll('#client_id, #method, #date_from, #date_to');
-    filterInputs.forEach(input => {
-        input.addEventListener('change', function() {
-            // Optionally auto-submit the form
-            // this.form.submit();
-        });
-    });
-});
-</script>
 
 <?php
 $content = ob_get_clean();
