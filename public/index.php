@@ -111,7 +111,15 @@ $router->group(['auth' => true], function(Router $r) {
     $r->post('/currencies/set-user-currency', 'CurrencyController@setUserCurrency');
     $r->get('/currencies/exchange-rate', 'CurrencyController@getExchangeRate');
     $r->post('/currencies/convert', 'CurrencyController@convert');
+
+	// Profile Management
+$r->get('/profile', 'ProfileController@index');
+$r->get('/profile/edit', 'ProfileController@edit');
+$r->post('/profile/update', 'ProfileController@update');
+$r->get('/profile/change-password', 'ProfileController@changePassword');
+$r->post('/profile/change-password', 'ProfileController@updatePassword');
 });
 
 // Handle the request
 $router->resolve();
+
